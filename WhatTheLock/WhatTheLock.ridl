@@ -1,0 +1,9 @@
+[
+  uuid(3714E831-FCA9-4EA8-A3F9-2A049EE7C7BA), 
+  version(1.0), 
+  helpstring("WhatTheLock library")
+]
+library WhatTheLock
+{
+  importlib("stdole2.tlb");
+};

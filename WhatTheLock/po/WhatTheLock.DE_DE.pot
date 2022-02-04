@@ -1,0 +1,64 @@
+﻿msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8"
+
+#: app.smsgdlgerror
+msgid "Error"
+msgstr "Fehler"
+
+#: app.smsgdlgwarning
+msgid "Warning"
+msgstr "Warnung"
+
+#: app.smsgdlginformation
+msgid "Information"
+msgstr "Information"
+
+#: unlocker.serrormessagerelease
+msgid "At least one handle could not be released:"
+msgstr "Mindestens ein Handle konnte nicht freigegeben werden:"
+
+#: unlocker.serrormessageterminate
+msgid "At least one process could not be terminated:"
+msgstr "Mindestens ein Prozess konnte nicht beendet werden:"
+
+#: unlocker.sfileprocess
+#, object-pascal-format
+msgid "File \"%s\" is in use by process %s."
+msgstr "Die Datei \"%s\" ist durch Prozess %s in Benutzung."
+
+#: unlocker.sfileprocesses
+#, object-pascal-format
+msgid "File \"%s\" is in use by %d processes."
+msgstr "Die Datei \"%s\" ist von %d Prozessen in Benutzung."
+
+#: unlocker.sfilesprocess
+#, object-pascal-format
+msgid "%d files are in use by process %s."
+msgstr "%d Dateien sind von Prozess %s in Benutzung."
+
+#: unlocker.sfilesprocesses
+#, object-pascal-format
+msgid "%d files are in use by %d processes."
+msgstr "%d Dateien sind von %d Prozessen in Benutzung."
+
+#: unlocker.srelease
+msgctxt "unlocker.srelease"
+msgid "Release file(s)"
+msgstr "Datei(en) freigeben"
+
+#: unlocker.sterminate
+msgid "Terminate process(es)"
+msgstr "Prozess(e) beenden"
+
+#: shellext.sfilenohandles
+msgid "The selected file is not in use by any process."
+msgstr "Die gewählte Datei ist von keinem Prozess in Benutzung."
+
+#: shellext.sfoldernohandles
+msgid "The selected folder and its contents are not in use by any process."
+msgstr "Der gewählte Ordner und sein Inhalt sind von keinem Prozess in Benutzung."
+
+#: shellext.scheckfilefolder
+msgid "Check with What The Lock..."
+msgstr "Mit What The Lock überprüfen..."
+

@@ -1,0 +1,63 @@
+﻿msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8"
+
+#: app.serrormessagerelease
+msgctxt "app.serrormessagerelease"
+msgid "At least one handle could not be released:"
+msgstr ""
+
+#: app.serrormessageterminate
+msgctxt "app.serrormessageterminate"
+msgid "At least one process could not be terminated:"
+msgstr ""
+
+#: app.sfileprocess
+#, object-pascal-format
+msgctxt "app.sfileprocess"
+msgid "File \"%s\" is in use by process %s."
+msgstr ""
+
+#: app.sfileprocesses
+#, object-pascal-format
+msgctxt "app.sfileprocesses"
+msgid "File \"%s\" is in use by %d processes."
+msgstr ""
+
+#: app.sfilesprocess
+#, object-pascal-format
+msgctxt "app.sfilesprocess"
+msgid "%d files are in use by process %s."
+msgstr ""
+
+#: app.sfilesprocesses
+#, object-pascal-format
+msgctxt "app.sfilesprocesses"
+msgid "%d files are in use by %d processes."
+msgstr ""
+
+#: app.srelease
+msgctxt "app.srelease"
+msgid "Release file(s)"
+msgstr ""
+
+#: app.sterminate
+msgctxt "app.sterminate"
+msgid "Terminate process(es)"
+msgstr ""
+
+#: shellext.scheckfilefolder
+msgid "Check with What The Lock..."
+msgstr ""
+
+#: shellext.sfilenohandles
+msgid "The selected file is not in use by any process."
+msgstr ""
+
+#: shellext.sfoldernohandles
+msgid "The selected folder and its contents are not in use by any process."
+msgstr ""
+
+#: shellext.shelptext
+msgid "Try to unlock a currently used file/folder"
+msgstr ""
+

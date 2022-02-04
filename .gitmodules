@@ -1,0 +1,6 @@
+[submodule "SubModules/minlzma"]
+	path = SubModules/minlzma
+	url = https://github.com/ionescu007/minlzma.git
+[submodule "SubModules/DDetours"]
+	path = SubModules/DDetours
+	url = https://github.com/MahdiSafsafi/DDetours
