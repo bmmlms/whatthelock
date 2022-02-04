@@ -13,8 +13,6 @@ uses
 
 type
 
-  // TODO: ddetours  wird ausm wahtsapp path benutzt noch. fail
-
   { TFileHandle }
 
   TFileHandle = class
@@ -490,7 +488,7 @@ begin
         if Kill then
         begin
           if not TerminateProcess(Process, 1) then
-            raise Exception.Create('Error terminating process');
+            raise Exception.Create('TerminateProcess() failed: %s'.Format([SysErrorMessage(GetLastError)]));
         end else if IsProcessWOW64(Process) then
           RemoteCloseHandleWOW64(Process, OpenHandle.Handle)
         else
