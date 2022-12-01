@@ -25,7 +25,7 @@
       </XPManifest>
       <Resources Count="2">
         <Resource_0 FileName="..\Resources\WhatTheLock.ico" Type="ICON" ResourceName="1"/>
-        <Resource_1 FileName="..\Build\SetupResources\WhatTheLock-x86_64.dll.xz" Type="RCDATA" ResourceName="LIB_64"/>
+        <Resource_1 FileName="..\Build\Release\x86_64\WhatTheLock.dll" Type="RCDATA" ResourceName="LIB_64"/>
       </Resources>
     </General>
     <VersionInfo>
@@ -43,7 +43,6 @@
             <Filename Value="..\Build\Release\$(TargetCPU)\WhatTheLock_Setup"/>
           </Target>
           <SearchPaths>
-            <Libraries Value="..\SubModules\minlzma\build\minlzlib"/>
             <OtherUnitFiles Value="..\Shared"/>
             <UnitOutputDirectory Value="..\Build\Release\DCU\$(TargetCPU)"/>
           </SearchPaths>
@@ -110,7 +109,6 @@
       <Filename Value="..\Build\Debug\$(TargetCPU)\WhatTheLock_Setup"/>
     </Target>
     <SearchPaths>
-      <Libraries Value="..\SubModules\minlzma\build\minlzlib"/>
       <OtherUnitFiles Value="..\Shared"/>
       <UnitOutputDirectory Value="..\Build\Debug\DCU\$(TargetCPU)"/>
     </SearchPaths>

@@ -12,34 +12,18 @@ uses
 
 {$R *.res}
 
-{$LINKLIB libminlzlib.a}
-
-function XzDecode(InputBuffer: PUInt8; InputSize: UInt32; OutputBuffer: PUInt8; OutputSize: PUInt32): longbool; cdecl; external;
-
 function ExtractResource(const ResourceName, FilePath: string): Boolean;
 var
   ResStream: TResourceStream;
-  OutStream: TMemoryStream;
-  OutputSize: UInt32;
 begin
   Result := False;
   try
-    OutStream := TMemoryStream.Create;
     ResStream := TResourceStream.Create(HInstance, ResourceName, RT_RCDATA);
     try
-      if not XzDecode(ResStream.Memory, ResStream.Size, nil, @OutputSize) then
-        Exit;
-
-      OutStream.SetSize(OutputSize);
-
-      if not XzDecode(ResStream.Memory, ResStream.Size, OutStream.Memory, @OutputSize) then
-        Exit;
-
-      OutStream.SaveToFile(FilePath);
+      ResStream.SaveToFile(FilePath);
       Result := True;
     finally
       ResStream.Free;
-      OutStream.Free;
     end;
   except
   end;
