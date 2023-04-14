@@ -65,13 +65,13 @@ type
   class threadvar
     FNextTaskDialogArgs: PShowClassDialogArgs;
   class var
-    OCoCreateInstance: function(_para1: PGUID; _para2: Pointer; _para3: DWORD; _para4, _para5: Pointer): HRESULT; stdcall;
+    OCoCreateInstance: function(_para1: TCLSID; _para2: Pointer; _para3: DWORD; _para4: TIID; out _para5: Pointer): HRESULT; stdcall;
     OTaskDialogIndirect: function(AConfig: PTASKDIALOGCONFIG; Res: PInteger; ResRadio: PInteger; VerifyFlag: PBOOL): HRESULT; stdcall;
 
     class function TaskDialogCallbackProc(hwnd: HWND; uNotification: UINT; wParam: WPARAM; lParam: LPARAM; dwRefData: Pointer): HRESULT; stdcall; static;
 
     class procedure ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall; static;
-    class function HCoCreateInstance(_para1: PGUID; _para2: Pointer; _para3: DWORD; _para4, _para5: Pointer): HRESULT; stdcall; static;
+    class function HCoCreateInstance(_para1: TCLSID; _para2: Pointer; _para3: DWORD; _para4: TIID; out _para5: Pointer): HRESULT; stdcall; static;
     class function HTaskDialogIndirect(AConfig: PTASKDIALOGCONFIG; Res: PInteger; ResRadio: PInteger; VerifyFlag: PBOOL): HRESULT; static;
   public
     class procedure Initialize; static;
@@ -233,13 +233,13 @@ begin
   CloseHandle(CreateThread(nil, 0, @TApp.ShowTaskDialogProc, Args, 0, ThreadId));
 end;
 
-class function TApp.HCoCreateInstance(_para1: PGUID; _para2: Pointer; _para3: DWORD; _para4, _para5: Pointer): HRESULT; stdcall;
+class function TApp.HCoCreateInstance(_para1: TCLSID; _para2: Pointer; _para3: DWORD; _para4: TIID; out _para5: Pointer): HRESULT; stdcall;
 var
   FileOperation: TFileOperation;
 begin
   Result := OCoCreateInstance(_para1, _para2, _para3, _para4, _para5);
 
-  if Succeeded(Result) and IsEqualGUID(_para1^, CLSID_FileOperation) then
+  if Succeeded(Result) and IsEqualGUID(_para1, CLSID_FileOperation) then
   begin
     FileOperation := TFileOperation.Create(IFileOperation(_para5));
     _para5 := FileOperation as IFileOperation;
