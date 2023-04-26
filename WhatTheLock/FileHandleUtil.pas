@@ -488,7 +488,8 @@ begin
         if Kill then
         begin
           if not TerminateProcess(Process, 1) then
-            raise Exception.Create('TerminateProcess() failed: %s'.Format([SysErrorMessage(GetLastError)]));
+            if GetLastError <> 5 then
+              raise Exception.Create('TerminateProcess() failed: %s'.Format([SysErrorMessage(GetLastError)]));
         end else if IsProcessWOW64(Process) then
           RemoteCloseHandleWOW64(Process, OpenHandle.Handle)
         else
