@@ -40,7 +40,10 @@ begin
   try
     Res := TResourceStream.Create(HInstance, 'WhatTheLock.' + LowerCase(Lang), RT_RCDATA);
   except
-    raise Exception.Create('Error loading translations');
+    on E: EResNotFound do
+      Exit
+    else
+      raise Exception.Create('Error loading translations');
   end;
 
   PoStringStream := TStringStream.Create;

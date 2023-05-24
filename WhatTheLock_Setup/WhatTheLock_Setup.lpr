@@ -92,8 +92,7 @@ end;
 
 begin
   try
-    TPaths.Init;
-    TFunctions.Init;
+    TPaths.Initialize;
 
     if TFunctions.MessageBox(0, 'This will install/update %s.'#13#10'Do you want to continue?'.Format([APPNAME]), 'Question', MB_ICONQUESTION or MB_YESNO) = IDNO then
       Exit;
@@ -102,7 +101,7 @@ begin
       Install;
     except
       try
-        TFunctions.RunUninstall(True);
+        TFunctions.RunUninstall;
       except
       end;
       raise;

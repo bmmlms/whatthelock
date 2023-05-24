@@ -7,6 +7,7 @@ uses
   Constants,
   Paths,
   Registry,
+  RtlConsts,
   ShlObj,
   SysUtils,
   Windows;
@@ -16,10 +17,13 @@ type
   { TFunctions }
 
   TFunctions = class
+  private
+    class procedure HandleException(hWnd: HWND; Obj: TObject; Addr: Pointer; FrameCount: Longint; Frames: PPointer); static; overload;
   public
+    class procedure HandleException(hWnd: HWND; E: Exception); static; overload;
+
     // Wrappers for windows functions
     class function MessageBox(hWnd: HWND; Text: UnicodeString; Caption: UnicodeString; uType: UINT): LongInt; static;
-
     class function GetSpecialFolder(const csidl: ShortInt): string; static;
     class function GetTempPath: string; static;
 
@@ -29,6 +33,30 @@ type
   end;
 
 implementation
+
+class procedure TFunctions.HandleException(hWnd: HWND; Obj: TObject; Addr: Pointer; FrameCount: Longint; Frames: PPointer);
+var
+  i: LongInt;
+  SL: TStringList;
+begin
+  SL := TStringList.Create;
+  try
+    if Obj is Exception then
+      SL.Add('%s: %s'.Format([Exception(Obj).ClassName, Exception(Obj).Message]));
+    SL.Add('  %s'.Format([StringReplace(Trim(BackTraceStrFunc(Addr)), '  ', ' ', [rfReplaceAll])]));
+    for i := 0 to FrameCount - 1 do
+      SL.Add('  %s'.Format([StringReplace(Trim(BackTraceStrFunc(Frames[i])), '  ', ' ', [rfReplaceAll])]));
+
+    TFunctions.MessageBox(0, 'An unexpected exception occurred.'#13#10'%s'.Format([SL.Text]), SMsgDlgError, MB_ICONERROR);
+  finally
+    SL.Free;
+  end;
+end;
+
+class procedure TFunctions.HandleException(hWnd: HWND; E: Exception);
+begin
+  TFunctions.HandleException(hWnd, E, ExceptAddr, ExceptFrameCount, ExceptFrames);
+end;
 
 class function TFunctions.MessageBox(hWnd: HWND; Text: UnicodeString; Caption: UnicodeString; uType: UINT): LongInt;
 begin

@@ -214,7 +214,7 @@ begin
     FileHandleUtil.CheckHandles([FFileName], False);
   except
     on E: Exception do
-      TFunctions.MessageBox(lpici.hwnd, E.Message, SMsgDlgError, MB_ICONERROR);
+      TFunctions.HandleException(lpici.hwnd, E);
   end;
 
   if FileHandleUtil.OpenHandles.Count > 0 then

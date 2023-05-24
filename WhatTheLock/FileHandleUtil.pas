@@ -37,12 +37,9 @@ type
   TFileHandleUtil = class
   private
   class var
-    FIsWow64Process2:
-    function(hProcess: HANDLE; pProcessMachine: PUSHORT; pNativeMachine: PUSHORT): BOOL; stdcall;
-    FGetFinalPathNameByHandleW:
-    function(hFILE: HANDLE; lpszFilePath: LPWSTR; cchFilePath, dwFlags: DWORD): DWORD; stdcall;
-    FEnumProcessModulesEx:
-    function(hProcess: HANDLE; lphModule: PHMODULE; cb: DWORD; var lpcbNeeded: DWORD; dwFilterFlag: DWORD): BOOL; stdcall;
+    FIsWow64Process2: function(hProcess: HANDLE; pProcessMachine: PUSHORT; pNativeMachine: PUSHORT): BOOL; stdcall;
+    FGetFinalPathNameByHandleW: function(hFILE: HANDLE; lpszFilePath: LPWSTR; cchFilePath, dwFlags: DWORD): DWORD; stdcall;
+    FEnumProcessModulesEx: function(hProcess: HANDLE; lphModule: PHMODULE; cb: DWORD; var lpcbNeeded: DWORD; dwFilterFlag: DWORD): BOOL; stdcall;
   private
     FOpenHandles: TList<TFileHandle>;
 
