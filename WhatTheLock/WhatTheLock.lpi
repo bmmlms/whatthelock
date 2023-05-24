@@ -36,13 +36,14 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="..\Build\Release\$(TargetCPU)\WhatTheLock"/>
+            <Filename Value="..\Build\$(Mode)\$(TargetCPU)\WhatTheLock"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
             <OtherUnitFiles Value="..\SubModules\DDetours\Source;..\Shared"/>
-            <UnitOutputDirectory Value="..\Build\Release\DCU\$(TargetCPU)"/>
+            <UnitOutputDirectory Value="..\Build\$(Mode)\DCU\$(TargetCPU)"/>
           </SearchPaths>
+          <Conditionals Value="Mode:=&apos;Release&apos;;"/>
           <Parsing>
             <SyntaxOptions>
               <SyntaxMode Value="Delphi"/>
@@ -128,13 +129,14 @@
     <Version Value="11"/>
     <PathDelim Value="\"/>
     <Target>
-      <Filename Value="..\Build\Debug\$(TargetCPU)\WhatTheLock"/>
+      <Filename Value="..\Build\$(Mode)\$(TargetCPU)\WhatTheLock"/>
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
       <OtherUnitFiles Value="..\SubModules\DDetours\Source;..\Shared"/>
-      <UnitOutputDirectory Value="..\Build\Debug\DCU\$(TargetCPU)"/>
+      <UnitOutputDirectory Value="..\Build\$(Mode)\DCU\$(TargetCPU)"/>
     </SearchPaths>
+    <Conditionals Value="Mode:=&apos;Debug&apos;;"/>
     <Parsing>
       <SyntaxOptions>
         <SyntaxMode Value="Delphi"/>

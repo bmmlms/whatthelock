@@ -23,9 +23,10 @@
         <TextName Value="org.WhatTheLock.WhatTheLock"/>
         <TextDesc Value="What The Lock Setup"/>
       </XPManifest>
-      <Resources Count="2">
+      <Resources Count="3">
         <Resource_0 FileName="..\Resources\WhatTheLock.ico" Type="ICON" ResourceName="1"/>
         <Resource_1 FileName="..\Build\Release\x86_64\WhatTheLock.dll" Type="RCDATA" ResourceName="LIB_64"/>
+        <Resource_2 FileName="..\Build\Debug\x86_64\WhatTheLock.dll" Type="RCDATA" ResourceName="LIB_64"/>
       </Resources>
     </General>
     <VersionInfo>
@@ -41,12 +42,13 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="..\Build\Release\$(TargetCPU)\WhatTheLock_Setup"/>
+            <Filename Value="..\Build\$(Mode)\$(TargetCPU)\WhatTheLock_Setup"/>
           </Target>
           <SearchPaths>
             <OtherUnitFiles Value="..\Shared"/>
-            <UnitOutputDirectory Value="..\Build\Release\DCU\$(TargetCPU)"/>
+            <UnitOutputDirectory Value="..\Build\$(Mode)\DCU\$(TargetCPU)"/>
           </SearchPaths>
+          <Conditionals Value="Mode:=&apos;Release&apos;;"/>
           <Parsing>
             <SyntaxOptions>
               <SyntaxMode Value="Delphi"/>
@@ -107,12 +109,13 @@
     <Version Value="11"/>
     <PathDelim Value="\"/>
     <Target>
-      <Filename Value="..\Build\Debug\$(TargetCPU)\WhatTheLock_Setup"/>
+      <Filename Value="..\Build\$(Mode)\$(TargetCPU)\WhatTheLock_Setup"/>
     </Target>
     <SearchPaths>
       <OtherUnitFiles Value="..\Shared"/>
-      <UnitOutputDirectory Value="..\Build\Debug\DCU\$(TargetCPU)"/>
+      <UnitOutputDirectory Value="..\Build\$(Mode)\DCU\$(TargetCPU)"/>
     </SearchPaths>
+    <Conditionals Value="Mode:=&apos;Debug&apos;;"/>
     <Parsing>
       <SyntaxOptions>
         <SyntaxMode Value="Delphi"/>
