@@ -32,8 +32,8 @@
     <VersionInfo>
       <UseVersionInfo Value="True"/>
       <MinorVersionNr Value="1"/>
-      <RevisionNr Value="1"/>
-      <StringTable FileDescription="What The Lock Setup" ProductName="What The Lock" ProductVersion="0.1.1.0"/>
+      <RevisionNr Value="2"/>
+      <StringTable FileDescription="What The Lock Setup" ProductName="What The Lock" ProductVersion="0.1.2.0"/>
     </VersionInfo>
     <BuildModes Count="2">
       <Item1 Name="Debug" Default="True"/>
