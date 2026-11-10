@@ -5,80 +5,42 @@ interface
 uses
   Classes,
   ComObj,
-  Controls,
   DDetours,
-  Dialogs,
-  ExtCtrls,
-  FileCtrl,
   FileHandleUtil,
   FileOperation,
-  Forms,
   Functions,
   Generics.Collections,
-  Graphics,
-  LCLTaskDialog,
   RtlConsts,
   SysUtils,
+  TaskDialog,
   windows;
 
 type
 
+  { TShowClassDialogArgs }
+
+  TShowClassDialogArgs = record
+    ParentWindowHandle: HWND;
+    FileHandleUtil: TFileHandleUtil;
+    FileOperation: TFileOperation;
+  end;
+  PShowClassDialogArgs = ^TShowClassDialogArgs;
+
   { TApp }
 
   TApp = class
-    type
-      TTaskDialogConfig = packed record
-        cbSize: Integer;
-        hwndParent: HWND;
-        hInstance: THandle;
-        dwFlags: Cardinal;
-        dwCommonButtons: Cardinal;
-        pszWindowTitle: PWideChar;
-        hMainIcon: HICON;
-        pszMainInstruction: PWideChar;
-        pszContent: PWideChar;
-        cButtons: Integer;
-        pButtons: Pointer;
-        nDefaultButton: Integer;
-        cRadioButtons: Integer;
-        pRadioButtons: Pointer;
-        nDefaultRadioButton: Integer;
-        pszVerificationText: PWideChar;
-        pszExpandedInformation: PWideChar;
-        pszExpandedControlText: PWideChar;
-        pszCollapsedControlText: PWideChar;
-        hFooterIcon: HICON;
-        pszFooter: PWideChar;
-        pfCallback: Pointer;
-        lpCallbackData: Pointer;
-        cxWidth: Integer;
-      end;
-      PTaskDialogConfig = ^TTaskDialogConfig;
-
-      TShowClassDialogArgs = record
-        ParentWindowHandle: HWND;
-        FileHandleUtil: TFileHandleUtil;
-        FileOperation: TFileOperation;
-      end;
-      PShowClassDialogArgs = ^TShowClassDialogArgs;
   private
-  class threadvar
-    FNextTaskDialogArgs: PShowClassDialogArgs;
   class var
     OCoCreateInstance: function(_para1: TCLSID; _para2: Pointer; _para3: DWORD; _para4: TIID; out _para5: Pointer): HRESULT; stdcall;
-    OTaskDialogIndirect: function(AConfig: PTASKDIALOGCONFIG; Res: PInteger; ResRadio: PInteger; VerifyFlag: PBOOL): HRESULT; stdcall;
 
-    class function TaskDialogCallbackProc(hwnd: HWND; uNotification: UINT; wParam: WPARAM; lParam: LPARAM; dwRefData: Pointer): HRESULT; stdcall; static;
+    class function TaskDialogCallbackProc(hwnd: HWND; uNotification: UINT; wParam: WPARAM; lParam: LPARAM; dwRefData: LONG_PTR): HRESULT; stdcall; static;
 
     class procedure ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall; static;
     class function HCoCreateInstance(_para1: TCLSID; _para2: Pointer; _para3: DWORD; _para4: TIID; out _para5: Pointer): HRESULT; stdcall; static;
-    class function HTaskDialogIndirect(AConfig: PTASKDIALOGCONFIG; Res: PInteger; ResRadio: PInteger; VerifyFlag: PBOOL): HRESULT; static;
   public
     class procedure Initialize; static;
     class procedure ShowTaskDialog(const ParentWindowHandle: HWND; const FileHandleUtil: TFileHandleUtil; const FileOperation: TFileOperation); overload; static;
   end;
-
-implementation
 
 resourcestring
   SFileProcess = 'File "%s" is in use by process %s.';
@@ -90,36 +52,88 @@ resourcestring
   SErrorMessageTerminate = 'At least one process could not be terminated:';
   SErrorMessageRelease = 'At least one handle could not be released:';
 
+implementation
+
 { TApp }
 
 class procedure TApp.ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall;
 
-  function MinimizeName(const Filename: string; const MaxWidth: Integer): string;
+  function MinimizeName(const FileName: UnicodeString; const MaxWidth: Integer): UnicodeString;
   var
-    Canvas: TCanvas;
+    DC: HDC;
+    Drive, Directory, Name, ShortName: UnicodeString;
+    Separator, Width: Integer;
+
+    function TextWidth(const Text: UnicodeString): Integer;
+    var
+      Size: TSize;
+    begin
+      if GetTextExtentPoint32W(DC, PWideChar(Text), Length(Text), Size) then
+        Result := Size.cx
+      else
+        Result := -1;
+    end;
+
   begin
-    Canvas := TCanvas.Create;
+    Result := FileName;
+    if Pos(PathDelim, FileName) = 0 then
+      Exit;
+
+    DC := GetDC(0);
+    if DC = 0 then
+      Exit;
+
     try
-      Canvas.Handle := GetDC(GetDesktopWindow);
-      try
-        Result := FileCtrl.MinimizeName(Filename, Canvas, MaxWidth);
-      finally
-        ReleaseDC(GetDesktopWindow, Canvas.Handle);
+      Width := TextWidth(FileName);
+      if (Width < 0) or (Width <= MaxWidth) then
+        Exit;
+
+      Drive := ExtractFileDrive(FileName);
+      Directory := ExtractFilePath(FileName);
+      Name := ExtractFileName(FileName);
+      Delete(Directory, 1, Length(Drive));
+      while (Directory <> '') and (Directory[1] in ['\', '/']) do
+      begin
+        Drive := Drive + Directory[1];
+        Delete(Directory, 1, 1);
       end;
+
+      while Directory <> '' do
+      begin
+        Separator := Pos(PathDelim, Directory);
+        if Separator = 0 then
+          Break;
+        Delete(Directory, 1, Separator);
+        ShortName := Drive + '...' + PathDelim + Directory + Name;
+        Width := TextWidth(ShortName);
+        if Width < 0 then
+          Exit;
+        if Width <= MaxWidth then
+        begin
+          Result := ShortName;
+          Exit;
+        end;
+      end;
+      Result := Name;
     finally
-      Canvas.Free;
+      ReleaseDC(0, DC);
     end;
   end;
 
 const
+  ID_RELEASE = 100;
+  ID_TERMINATE = 101;
   ProcessString = '"%s" (%d)';
 var
   i: Integer;
   OpenedManually, Exists: Boolean;
   ProcessedFileHandle: TFileHandle;
-  Text, ExpandedText: string;
-  TaskDialog: Dialogs.TTaskDialog;
-  Button: TTaskDialogBaseButtonItem;
+  Text: UnicodeString;
+  ExpandedText: UnicodeString = '';
+  Title, ReleaseButtonText, TerminateButtonText: UnicodeString;
+  Config: TTaskDialogConfig;
+  Buttons: array[0..1] of TTaskDialogButton;
+  Button: Integer = 0;
   OpenHandle: TFileHandle;
   Processes, Filenames: TList<string>;
   Processed: TList<TFileHandle>;
@@ -151,7 +165,6 @@ begin
         if not Filenames.Contains(OpenHandle.Filename) then
           Filenames.Add(OpenHandle.Filename);
       end;
-      ExpandedText := '';
 
       if (Processes.Count = 1) and (Filenames.Count = 1) then
         Text := SFileProcess.Format([Filenames[0], Processes[0]])
@@ -180,34 +193,42 @@ begin
       Processed.Free;
     end;
 
-    TaskDialog := Dialogs.TTaskDialog.Create(Application);
-    TaskDialog.Caption := IfThen<string>(OpenedManually, SMsgDlgInformation, SMsgDlgWarning);
-    TaskDialog.MainIcon := IfThen < Dialogs.TTaskDialogIcon > (OpenedManually, tdiInformation, tdiWarning);
-    TaskDialog.CommonButtons := [tcbCancel];
-    TaskDialog.DefaultButton := tcbCancel;
-    TaskDialog.Flags := TaskDialog.Flags + [tfUseCommandLinks];
+    Title := IfThen<string>(OpenedManually, SMsgDlgInformation, SMsgDlgWarning);
+    ReleaseButtonText := SRelease;
+    TerminateButtonText := STerminate;
 
-    TaskDialog.Text := Text;
-    TaskDialog.ExpandedText := ExpandedText;
+    Buttons[0].nButtonID := ID_RELEASE;
+    Buttons[0].pszButtonText := PWideChar(ReleaseButtonText);
+    Buttons[1].nButtonID := ID_TERMINATE;
+    Buttons[1].pszButtonText := PWideChar(TerminateButtonText);
 
-    Button := TaskDialog.Buttons.Add;
-    Button.Caption := SRelease;
-    Button := TaskDialog.Buttons.Add;
-    Button.Caption := STerminate;
+    ZeroMemory(@Config, SizeOf(Config));
+    Config.cbSize := SizeOf(Config);
+    Config.hwndParent := Args.ParentWindowHandle;
+    Config.dwFlags := TDF_USE_COMMAND_LINKS or TDF_ALLOW_DIALOG_CANCELLATION;
+    Config.dwCommonButtons := TDCBF_CANCEL_BUTTON;
+    Config.pszWindowTitle := PWideChar(Title);
+    Config.pszMainIcon := IfThen<Pointer>(OpenedManually, TD_INFORMATION_ICON, TD_WARNING_ICON);
+    Config.pszContent := PWideChar(Text);
+    Config.cButtons := Length(Buttons);
+    Config.pButtons := @Buttons[0];
+    Config.nDefaultButton := idCancel;
+    Config.pszExpandedInformation := PWideChar(ExpandedText);
+    Config.pfCallback := @TaskDialogCallbackProc;
+    Config.lpCallbackData := LONG_PTR(PtrUInt(Args));
+    Config.cxWidth := 250;
 
-    FNextTaskDialogArgs := Args;
-
-    if not TaskDialog.Execute then
+    if Failed(TaskDialog.ShowTaskDialog(Config, Button)) then
       Exit;
 
     try
-      case TaskDialog.ModalResult of
-        100: Args.FileHandleUtil.CloseHandles(Args.FileHandleUtil.OpenHandles.ToArray, False);
-        101: Args.FileHandleUtil.CloseHandles(Args.FileHandleUtil.OpenHandles.ToArray, True);
+      case Button of
+        ID_RELEASE: Args.FileHandleUtil.CloseHandles(Args.FileHandleUtil.OpenHandles.ToArray, False);
+        ID_TERMINATE: Args.FileHandleUtil.CloseHandles(Args.FileHandleUtil.OpenHandles.ToArray, True);
       end;
     except
       on E: Exception do
-        if TaskDialog.ModalResult = 100 then
+        if Button = ID_RELEASE then
           TFunctions.MessageBox(Args.ParentWindowHandle, SErrorMessageRelease + LineEnding + E.Message, SMsgDlgError, MB_ICONERROR)
         else
           TFunctions.MessageBox(Args.ParentWindowHandle, SErrorMessageTerminate + LineEnding + E.Message, SMsgDlgError, MB_ICONERROR);
@@ -222,7 +243,6 @@ end;
 
 class procedure TApp.ShowTaskDialog(const ParentWindowHandle: HWND; const FileHandleUtil: TFileHandleUtil; const FileOperation: TFileOperation);
 var
-  ThreadId: DWORD;
   Args: PShowClassDialogArgs;
 begin
   New(Args);
@@ -230,7 +250,7 @@ begin
   Args.FileHandleUtil := FileHandleUtil;
   Args.FileOperation := FileOperation;
 
-  CloseHandle(CreateThread(nil, 0, @TApp.ShowTaskDialogProc, Args, 0, ThreadId));
+  TApp.ShowTaskDialogProc(Args);
 end;
 
 class function TApp.HCoCreateInstance(_para1: TCLSID; _para2: Pointer; _para3: DWORD; _para4: TIID; out _para5: Pointer): HRESULT; stdcall;
@@ -246,14 +266,12 @@ begin
   end;
 end;
 
-class function TApp.TaskDialogCallbackProc(hwnd: HWND; uNotification: UINT; wParam: WPARAM; lParam: LPARAM; dwRefData: Pointer): HRESULT; stdcall;
-const
-  TDN_DESTROYED = 5;
-  TDN_DIALOG_CONSTRUCTED = 7;
+class function TApp.TaskDialogCallbackProc(hwnd: HWND; uNotification: UINT; wParam: WPARAM; lParam: LPARAM; dwRefData: LONG_PTR): HRESULT; stdcall;
 var
-  Args: PShowClassDialogArgs absolute dwRefData;
+  Args: PShowClassDialogArgs;
   TaskDialogRect, ParentRect: TRect;
 begin
+  Args := PShowClassDialogArgs(PtrUInt(dwRefData));
   Result := S_OK;
 
   case uNotification of
@@ -278,29 +296,12 @@ begin
   end;
 end;
 
-class function TApp.HTaskDialogIndirect(AConfig: PTASKDIALOGCONFIG; Res: PInteger; ResRadio: PInteger; VerifyFlag: PBOOL): HRESULT;
-begin
-  if Assigned(FNextTaskDialogArgs) then
-  begin
-    AConfig.pfCallback := @TaskDialogCallbackProc;
-    AConfig.lpCallbackData := FNextTaskDialogArgs;
-    AConfig.cxWidth := 250;
-
-    FNextTaskDialogArgs := nil;
-  end;
-
-  Result := OTaskDialogIndirect(AConfig, Res, ResRadio, VerifyFlag);
-end;
-
 class procedure TApp.Initialize;
 var
   Func: Pointer;
 begin
   Func := GetProcAddress(GetModuleHandle('ole32.dll'), 'CoCreateInstance');
   @OCoCreateInstance := InterceptCreate(Func, @HCoCreateInstance);
-
-  @OTaskDialogIndirect := @TaskDialogIndirect;
-  TaskDialogIndirect := @HTaskDialogIndirect;
 end;
 
 end.
