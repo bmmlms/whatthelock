@@ -8,24 +8,54 @@ uses
   FileHandleUtil,
   Functions,
   gettext,
-  Interfaces,
   Paths,
   RtlConsts,
   ShellExt,
+  ShlObj,
   SysUtils,
   Translations,
   windows;
 
-{$R *.tlb}
-{$R *.res}
+  {$R *.tlb}
+  {$R *.res}
+  {$R ..\Shared\CommonControls.rc}
 
 procedure Uninstall; stdcall;
+var
+  ClassesKey: HKEY;
+  ProcessExitCode: DWORD;
 begin
-  DllUnregisterServer;
+  try
+    if (TPaths.Scope = scAllUsers) and (not IsUserAnAdmin) then
+    begin
+      // Installations for all users can only be removed with administrator rights
+      TFunctions.RunElevated(ConcatPaths([TFunctions.GetSpecialFolder(CSIDL_SYSTEM), 'rundll32.exe']), '"%s" Uninstall'.Format([TPaths.WhatTheLockLibraryPath]), ProcessExitCode);
+      Exit;
+    end;
 
-  TFunctions.RunUninstall;
+    if TPaths.Scope = scCurrentUser then
+    begin
+      ClassesKey := TFunctions.BeginPerUserRegistration;
+      try
+        DllUnregisterServer;
+      finally
+        TFunctions.EndPerUserRegistration(ClassesKey);
+      end;
+    end else
+      DllUnregisterServer;
 
-  TFunctions.MessageBox(0, '%s was uninstalled successfully.'.Format([APPNAME]), SMsgDlgInformation, MB_ICONINFORMATION);
+    TFunctions.RunUninstall;
+
+    TFunctions.MessageBox(0, '%s was uninstalled successfully.'.Format([APPNAME]), SMsgDlgInformation, MB_ICONINFORMATION);
+  except
+    on E: Exception do
+    begin
+      if not E.Message.EndsWith('.') then
+        E.Message := E.Message + '.';
+
+      TFunctions.MessageBox(0, 'Error uninstalling %s: %s'.Format([APPNAME, E.Message]), SMsgDlgError, MB_ICONERROR);
+    end;
+  end;
 end;
 
 procedure Translate;
@@ -65,8 +95,6 @@ exports
   DllUnregisterServer,
   Uninstall;
 
-var
-  ThreadId: DWORD;
 begin
   IsMultiThread := True;
 
@@ -74,6 +102,7 @@ begin
     Translate;
 
     TPaths.Initialize;
+    TPaths.SetScopeFromLibraryPath(ComServer.ServerFileName);
     TFileHandleUtil.Initialize;
     TApp.Initialize;
   except

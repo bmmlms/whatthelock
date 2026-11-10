@@ -93,8 +93,6 @@ function ShowTaskDialog(const Config: TTaskDialogConfig; out Button: Integer): H
 
 implementation
 
-{$R TaskDialog.rc}
-
 const
   TASKDIALOG_MANIFEST_RESOURCE_ID = 2;
   TASKDIALOG_ACTCTX_RESOURCE_NAME_VALID = $00000008;
