@@ -19,14 +19,12 @@
       <UseXPManifest Value="True"/>
       <XPManifest>
         <DpiAware Value="True/PM"/>
-        <ExecutionLevel Value="requireAdministrator"/>
         <TextName Value="org.WhatTheLock.WhatTheLock"/>
         <TextDesc Value="What The Lock Setup"/>
       </XPManifest>
-      <Resources Count="3">
+      <Resources Count="2">
         <Resource_0 FileName="..\Resources\WhatTheLock.ico" Type="ICON" ResourceName="1"/>
         <Resource_1 FileName="..\Build\Release\x86_64\WhatTheLock.dll" Type="RCDATA" ResourceName="LIB_64"/>
-        <Resource_2 FileName="..\Build\Debug\x86_64\WhatTheLock.dll" Type="RCDATA" ResourceName="LIB_64"/>
       </Resources>
     </General>
     <VersionInfo>
@@ -86,7 +84,7 @@
     <RunParams>
       <FormatVersion Value="2"/>
     </RunParams>
-    <Units Count="4">
+    <Units Count="5">
       <Unit0>
         <Filename Value="WhatTheLock_Setup.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -103,6 +101,10 @@
         <Filename Value="..\Shared\Paths.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit3>
+      <Unit4>
+        <Filename Value="..\Shared\TaskDialog.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit4>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
