@@ -7,10 +7,8 @@ uses
   Classes,
   ComObj,
   DDetours,
-  Dialogs,
   FileHandleUtil,
   FileOperationProgressSink,
-  Forms,
   Functions,
   RtlConsts,
   shlobj,
@@ -58,6 +56,7 @@ type
         DataObject: IDataObject;
       end;
       PProcessDataObjectArg = ^TProcessDataObjectArg;
+
 
   private
     FTaskDialogWindowHandle, FParentWindowHandle: THandle;
@@ -216,15 +215,21 @@ begin
 end;
 
 destructor TFileOperation.Destroy;
+var
+  ClosePosted: Boolean;
 begin
+  ClosePosted := False;
   if FThreadHandle > 0 then
   begin
-    WaitForSingleObject(FThreadHandle, INFINITE);
+    while WaitForSingleObject(FThreadHandle, 50) = WAIT_TIMEOUT do
+      if (not ClosePosted) and (FTaskDialogWindowHandle > 0) then
+        ClosePosted := PostMessage(FTaskDialogWindowHandle, WM_CLOSE, 0, 0);
+
     CloseHandle(FThreadHandle);
+    FThreadHandle := 0;
   end;
 
-  if FTaskDialogWindowHandle > 0 then
-    PostMessage(FTaskDialogWindowHandle, WM_CLOSE, 0, 0);
+  FTaskDialogWindowHandle := 0;
 
   FFileHandleUtil.Free;
   FDeleteFiles.Free;
