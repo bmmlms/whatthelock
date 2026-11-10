@@ -5,9 +5,11 @@ interface
 uses
   Classes,
   Constants,
+  JwaWinReg,
   Paths,
   Registry,
   RtlConsts,
+  ShellApi,
   ShlObj,
   SysUtils,
   Windows;
@@ -19,6 +21,7 @@ type
   TFunctions = class
   private
     class procedure HandleException(hWnd: HWND; Obj: TObject; Addr: Pointer; FrameCount: Longint; Frames: PPointer); static; overload;
+    class procedure ScheduleDelete(const FileName, DirName: string); static;
   public
     class procedure HandleException(hWnd: HWND; E: Exception); static; overload;
 
@@ -26,13 +29,23 @@ type
     class function MessageBox(hWnd: HWND; Text: UnicodeString; Caption: UnicodeString; uType: UINT): LongInt; static;
     class function GetSpecialFolder(const csidl: ShortInt): string; static;
     class function GetTempPath: string; static;
+    class function RunElevated(const FileName, Parameters: string; out ProcessExitCode: DWORD): Boolean; static;
+    class function BeginPerUserRegistration: HKEY; static;
+    class procedure EndPerUserRegistration(const ClassesKey: HKEY); static;
 
     // Functions only used by Launcher/Setup
+    class function IsInstalled(const Scope: TInstallScope): Boolean; static;
     class procedure RunUninstall; static;
     class function GetFileVersion(const FileName: string): string; static;
   end;
 
 implementation
+
+const
+  SEE_MASK_NOCLOSEPROCESS = $00000040;
+  ERROR_CANCELLED_BY_USER = 1223;
+
+procedure OaEnablePerUserTLibRegistration; stdcall; external 'oleaut32.dll' name 'OaEnablePerUserTLibRegistration';
 
 class procedure TFunctions.HandleException(hWnd: HWND; Obj: TObject; Addr: Pointer; FrameCount: Longint; Frames: PPointer);
 var
@@ -82,25 +95,142 @@ begin
   Result := Buf;
 end;
 
+class function TFunctions.RunElevated(const FileName, Parameters: string; out ProcessExitCode: DWORD): Boolean;
+var
+  Info: TSHELLEXECUTEINFOW;
+  Verb, FileNameW, ParametersW: UnicodeString;
+  Error: DWORD;
+begin
+  ProcessExitCode := 0;
+
+  Verb := 'runas';
+  FileNameW := UnicodeString(FileName);
+  ParametersW := UnicodeString(Parameters);
+
+  ZeroMemory(@Info, SizeOf(Info));
+  Info.cbSize := SizeOf(Info);
+  Info.fMask := SEE_MASK_NOCLOSEPROCESS;
+  Info.lpVerb := PWideChar(Verb);
+  Info.lpFile := PWideChar(FileNameW);
+  Info.lpParameters := PWideChar(ParametersW);
+  Info.nShow := SW_SHOWNORMAL;
+
+  if not ShellExecuteExW(@Info) then
+  begin
+    Error := GetLastError;
+    if Error = ERROR_CANCELLED_BY_USER then
+      Exit(False);
+    raise Exception.Create('ShellExecuteExW() failed: %s'.Format([SysErrorMessage(Error)]));
+  end;
+
+  if Info.hProcess <> 0 then
+  try
+    WaitForSingleObject(Info.hProcess, INFINITE);
+    if not GetExitCodeProcess(Info.hProcess, ProcessExitCode) then
+      ProcessExitCode := 1;
+  finally
+    CloseHandle(Info.hProcess);
+  end;
+
+  Result := True;
+end;
+
+class function TFunctions.BeginPerUserRegistration: HKEY;
+var
+  Res: LongInt;
+begin
+  Res := RegOpenKeyExW(HKEY_CURRENT_USER, 'Software\Classes', 0, KEY_ALL_ACCESS, Result);
+  if Res <> ERROR_SUCCESS then
+    raise Exception.Create('RegOpenKeyExW() failed: %s'.Format([SysErrorMessage(Res)]));
+
+  OaEnablePerUserTLibRegistration;
+
+  Res := RegOverridePredefKey(HKEY_CLASSES_ROOT, Result);
+  if Res <> ERROR_SUCCESS then
+  begin
+    RegCloseKey(Result);
+    raise Exception.Create('RegOverridePredefKey() failed: %s'.Format([SysErrorMessage(Res)]));
+  end;
+end;
+
+class procedure TFunctions.EndPerUserRegistration(const ClassesKey: HKEY);
+begin
+  RegOverridePredefKey(HKEY_CLASSES_ROOT, 0);
+  RegCloseKey(ClassesKey);
+end;
+
+class function TFunctions.IsInstalled(const Scope: TInstallScope): Boolean;
+var
+  Reg: TRegistry;
+begin
+  Reg := TRegistry.Create(KEY_READ);
+  try
+    Reg.RootKey := TPaths.GetRegistryRootKey(Scope);
+    Result := Reg.KeyExists(UNINSTALL_KEY);
+  finally
+    Reg.Free;
+  end;
+end;
+
+class procedure TFunctions.ScheduleDelete(const FileName, DirName: string);
+var
+  Command: string;
+  Reg: TRegistry;
+begin
+  if TPaths.Scope = scAllUsers then
+  begin
+    if FileName <> '' then
+      MoveFileEx(PChar(FileName), nil, MOVEFILE_DELAY_UNTIL_REBOOT);
+    if DirName <> '' then
+      MoveFileEx(PChar(DirName), nil, MOVEFILE_DELAY_UNTIL_REBOOT);
+    Exit;
+  end;
+
+  // MOVEFILE_DELAY_UNTIL_REBOOT requires administrator rights, delete on next logon of the current user instead
+  Command := '';
+  if FileName <> '' then
+    Command := 'del /f /q "%s"'.Format([FileName]);
+  if DirName <> '' then
+  begin
+    if Command <> '' then
+      Command := Command + ' & ';
+    Command := Command + 'rmdir "%s"'.Format([DirName]);
+  end;
+
+  if Command = '' then
+    Exit;
+
+  Reg := TRegistry.Create;
+  try
+    Reg.RootKey := HKEY_CURRENT_USER;
+    if Reg.OpenKey('SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce', True) then
+      Reg.WriteString('WhatTheLock_%s'.Format([Guid.NewGuid.ToString(True)]), '"%s" /c %s'.Format([ConcatPaths([GetSpecialFolder(CSIDL_SYSTEM), 'cmd.exe']), Command]));
+  finally
+    Reg.Free;
+  end;
+end;
+
 class procedure TFunctions.RunUninstall;
 var
   UninstallLibraryPath: string;
   Reg: TRegistry;
 begin
+  UninstallLibraryPath := '';
+
   if FileExists(TPaths.WhatTheLockLibraryPath) and (not SysUtils.DeleteFile(TPaths.WhatTheLockLibraryPath)) then
   begin
     UninstallLibraryPath := ConcatPaths([ExtractFileDir(TPaths.WhatTheLockLibraryPath), Guid.NewGuid.ToString(True)]);
-    SysUtils.RenameFile(TPaths.WhatTheLockLibraryPath, UninstallLibraryPath);
-    MoveFileEx(PChar(UninstallLibraryPath), nil, MOVEFILE_DELAY_UNTIL_REBOOT);
+    if not SysUtils.RenameFile(TPaths.WhatTheLockLibraryPath, UninstallLibraryPath) then
+      UninstallLibraryPath := TPaths.WhatTheLockLibraryPath;
   end;
 
   if not SysUtils.RemoveDir(TPaths.WhatTheLockDir) then
-    MoveFileEx(PChar(TPaths.WhatTheLockDir), nil, MOVEFILE_DELAY_UNTIL_REBOOT);
+    ScheduleDelete(UninstallLibraryPath, TPaths.WhatTheLockDir);
 
   Reg := TRegistry.Create;
   try
-    Reg.RootKey := HKEY_LOCAL_MACHINE;
-    Reg.DeleteKey('SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\%s'.Format([APPNAME]));
+    Reg.RootKey := TPaths.GetRegistryRootKey(TPaths.Scope);
+    Reg.DeleteKey(UNINSTALL_KEY);
   finally
     Reg.Free;
   end;
