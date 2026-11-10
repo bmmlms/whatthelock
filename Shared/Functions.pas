@@ -21,7 +21,6 @@ type
   TFunctions = class
   private
     class procedure HandleException(hWnd: HWND; Obj: TObject; Addr: Pointer; FrameCount: Longint; Frames: PPointer); static; overload;
-    class procedure ScheduleDelete(const FileName, DirName: string); static;
   public
     class procedure HandleException(hWnd: HWND; E: Exception); static; overload;
 
@@ -37,6 +36,7 @@ type
     class function IsInstalled(const Scope: TInstallScope): Boolean; static;
     class procedure RunUninstall; static;
     class function GetFileVersion(const FileName: string): string; static;
+    class procedure ScheduleDelete(const FileName, DirName: string); static;
   end;
 
 implementation
