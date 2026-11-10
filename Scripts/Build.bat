@@ -1,9 +1,7 @@
 @ECHO OFF
 
 REM Pathes of required tools
-SET "FPCBIN=D:\Lazarus\fpc\3.2.2\bin\x86_64-win64"
-SET "ZIP=D:\7-Zip\7z.exe"
-SET "PLINK=C:\Program Files\PuTTY\plink.exe"
+SET "FPCBIN=C:\Lazarus\fpc\3.2.2\bin\x86_64-win64"
 SET "MODE=Release"
 
 IF NOT EXIST %FPCBIN% GOTO FAILENVIRONMENT
@@ -20,7 +18,7 @@ cd ..\WhatTheLock
 lazbuild --build-all --cpu=x86_64 --os=Win64 --build-mode=%MODE% WhatTheLock.lpi
 if %ERRORLEVEL% GEQ 1 GOTO FAIL
 
-type ..\Build\%MODE%\x86_64\WhatTheLock.dll | "%PLINK%" -batch gaia osslsigncode-sign.sh > ..\Build\%MODE%\x86_64\WhatTheLock-signed.dll
+ssh gaia osslsigncode-sign.sh < ..\Build\%MODE%\x86_64\WhatTheLock.dll > ..\Build\%MODE%\x86_64\WhatTheLock-signed.dll
 if %ERRORLEVEL% GEQ 1 GOTO FAIL
 move /y ..\Build\%MODE%\x86_64\WhatTheLock-signed.dll ..\Build\%MODE%\x86_64\WhatTheLock.dll
 if %ERRORLEVEL% GEQ 1 GOTO FAIL
@@ -30,7 +28,7 @@ cd ..\WhatTheLock_Setup
 lazbuild --build-all --cpu=x86_64 --os=Win64 --build-mode=%MODE% WhatTheLock_Setup.lpi
 if %ERRORLEVEL% GEQ 1 GOTO FAIL
 
-type ..\Build\%MODE%\x86_64\WhatTheLock_Setup.exe | "%PLINK%" -batch gaia osslsigncode-sign.sh > ..\Build\%MODE%\x86_64\WhatTheLock_Setup-signed.exe
+ssh gaia osslsigncode-sign.sh < ..\Build\%MODE%\x86_64\WhatTheLock_Setup.exe > ..\Build\%MODE%\x86_64\WhatTheLock_Setup-signed.exe
 if %ERRORLEVEL% GEQ 1 GOTO FAIL
 move /y ..\Build\%MODE%\x86_64\WhatTheLock_Setup-signed.exe ..\Build\%MODE%\x86_64\WhatTheLock_Setup.exe
 if %ERRORLEVEL% GEQ 1 GOTO FAIL
