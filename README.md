@@ -14,7 +14,11 @@ What The Lock is a tool that integrates into Windows shell components (i.e. Expl
 - Built using Lazarus :fire:
 
 ### Installation
-Download the installer from "Releases" and run it. What The Lock will install itself to %PROGRAMFILES%\What The Lock.
+Download the installer from "Releases" and run it. The installer asks whether What The Lock should be installed
+- for all users (requires administrator rights): installs to %PROGRAMFILES%\What The Lock
+- only for the current user (no administrator rights required): installs to %LOCALAPPDATA%\Programs\What The Lock
+
+When installed for the current user only, What The Lock is not available in elevated processes, since Windows ignores per-user COM registrations there.
 
 Complete uninstallation is possible using "Programs and Features".
 
