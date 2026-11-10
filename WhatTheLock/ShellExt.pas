@@ -7,7 +7,6 @@ uses
   ComObj,
   FileHandleUtil,
   Functions,
-  Graphics,
   RtlConsts,
   shlobj,
   windows;
@@ -44,6 +43,12 @@ type
 const
   CLSID_WhatTheLockMenu: TGUID = '{9684203C-406A-4228-8413-1D10E57D4ABD}';
 
+resourcestring
+  SHelpText = 'Try to unlock a currently used file/folder';
+  SCheckFileFolder = 'Check with What The Lock...';
+  SFolderNoHandles = 'The selected folder and its contents are not in use by any process.';
+  SFileNoHandles = 'The selected file is not in use by any process.';
+
 implementation
 
 uses
@@ -52,16 +57,15 @@ uses
   Registry,
   SysUtils;
 
-resourcestring
-  SHelpText = 'Try to unlock a currently used file/folder';
-  SCheckFileFolder = 'Check with What The Lock...';
-  SFolderNoHandles = 'The selected folder and its contents are not in use by any process.';
-  SFileNoHandles = 'The selected file is not in use by any process.';
-
-{ TWhatTheLockMenu }
+  { TWhatTheLockMenu }
 
 class procedure TWhatTheLockMenu.CreateMenuBitmap;
 type
+  TMenuBitmapSize = record
+    Width: Longint;
+    Height: Longint;
+  end;
+
   BITMAPV5HEADER = record
     bV5Size: DWORD;
     bV5Width: Longint;
@@ -91,7 +95,7 @@ type
 
   TCreateDIBSection = function(_para1: HDC; const _para2: BITMAPV5HEADER; _para3: UINT; var _para4: Pointer; _para5: HANDLE; _para6: DWORD): HBITMAP; stdcall;
 
-  function GetBitmapHeader(const Size: TSize): BITMAPV5HEADER;
+  function GetBitmapHeader(const Size: TMenuBitmapSize): BITMAPV5HEADER;
   begin
     ZeroMemory(@Result, SizeOf(Result));
     Result.bV5Size := SizeOf(Result);
@@ -108,9 +112,10 @@ var
   Icon: HICON;
   BitmapStart: PRGBQUAD;
   BitmapHeader: BITMAPV5HEADER;
-  BitmapSize: TSize;
+  BitmapSize: TMenuBitmapSize;
 begin
-  BitmapSize := TSize.Create(16, 16);
+  BitmapSize.Width := 16;
+  BitmapSize.Height := 16;
 
   DC := CreateCompatibleDC(0);
 
