@@ -83,7 +83,7 @@
     </RunParams>
     <RequiredPackages>
       <Item>
-        <PackageName Value="LCL"/>
+        <PackageName Value="LazUtils"/>
       </Item>
     </RequiredPackages>
     <Units>
@@ -121,6 +121,10 @@
       </Unit>
       <Unit>
         <Filename Value="..\Shared\Paths.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="..\Shared\TaskDialog.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit>
     </Units>
