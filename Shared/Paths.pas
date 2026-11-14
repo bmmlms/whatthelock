@@ -13,36 +13,50 @@ type
   TPaths = class
   private
   class var
-    FExePath: string;
-    FAllUsersDir: string;
-    FCurrentUserDir: string;
+    FExePath: UnicodeString;
+    FAllUsersDir: UnicodeString;
+    FCurrentUserDir: UnicodeString;
     FScope: TInstallScope;
-    FWhatTheLockDir: string;
-    FWhatTheLockLibraryPath: string;
+    FWhatTheLockDir: UnicodeString;
+    FWhatTheLockLibraryPath: UnicodeString;
   public
     class procedure Initialize; static;
     class procedure SetScope(const Scope: TInstallScope); static;
-    class procedure SetScopeFromLibraryPath(const LibraryPath: string); static;
+    class procedure SetScopeFromLibraryPath(const LibraryPath: UnicodeString); static;
 
-    class function GetInstallDir(const Scope: TInstallScope): string; static;
+    class function GetInstallDir(const Scope: TInstallScope): UnicodeString; static;
     class function GetRegistryRootKey(const Scope: TInstallScope): HKEY; static;
-    class property ExePath: string read FExePath;
+    class property ExePath: UnicodeString read FExePath;
     class property Scope: TInstallScope read FScope;
-    class property WhatTheLockDir: string read FWhatTheLockDir;
-    class property WhatTheLockLibraryPath: string read FWhatTheLockLibraryPath;
+    class property WhatTheLockDir: UnicodeString read FWhatTheLockDir;
+    class property WhatTheLockLibraryPath: UnicodeString read FWhatTheLockLibraryPath;
   end;
 
 implementation
 
 uses
   Constants,
-  Functions;
+  Functions,
+  UnicodePaths;
 
 class procedure TPaths.Initialize;
+var
+  BufferLength, CharCount: DWORD;
 begin
-  FExePath := ParamStr(0);
-  FAllUsersDir := ConcatPaths([TFunctions.GetSpecialFolder(CSIDL_PROGRAM_FILES), APPNAME]);
-  FCurrentUserDir := ConcatPaths([TFunctions.GetSpecialFolder(CSIDL_LOCAL_APPDATA), 'Programs', APPNAME]);
+  BufferLength := MAX_PATH;
+  repeat
+    SetLength(FExePath, BufferLength);
+    CharCount := GetModuleFileNameW(HInstance, PWideChar(FExePath), BufferLength);
+    if CharCount = 0 then
+      RaiseLastOSError;
+    if CharCount < BufferLength then
+      Break;
+    BufferLength := BufferLength * 2;
+  until BufferLength > 32768;
+  SetLength(FExePath, CharCount);
+
+  FAllUsersDir := UnicodeConcatPath(TFunctions.GetSpecialFolder(CSIDL_PROGRAM_FILES), UnicodeString(APPNAME));
+  FCurrentUserDir := UnicodeConcatPath(UnicodeConcatPath(TFunctions.GetSpecialFolder(CSIDL_LOCAL_APPDATA), 'Programs'), UnicodeString(APPNAME));
 
   SetScope(scAllUsers);
 end;
@@ -51,18 +65,18 @@ class procedure TPaths.SetScope(const Scope: TInstallScope);
 begin
   FScope := Scope;
   FWhatTheLockDir := GetInstallDir(Scope);
-  FWhatTheLockLibraryPath := ConcatPaths([FWhatTheLockDir, LIBRARYNAME_64]);
+  FWhatTheLockLibraryPath := UnicodeConcatPath(FWhatTheLockDir, UnicodeString(LIBRARYNAME_64));
 end;
 
-class procedure TPaths.SetScopeFromLibraryPath(const LibraryPath: string);
+class procedure TPaths.SetScopeFromLibraryPath(const LibraryPath: UnicodeString);
 begin
-  if SameText(ExcludeTrailingPathDelimiter(ExtractFileDir(LibraryPath)), ExcludeTrailingPathDelimiter(FCurrentUserDir)) then
+  if UnicodeCompareTextOrdinal(SysUtils.ExtractFileDir(LibraryPath), FCurrentUserDir) then
     SetScope(scCurrentUser)
   else
     SetScope(scAllUsers);
 end;
 
-class function TPaths.GetInstallDir(const Scope: TInstallScope): string;
+class function TPaths.GetInstallDir(const Scope: TInstallScope): UnicodeString;
 begin
   if Scope = scCurrentUser then
     Result := FCurrentUserDir

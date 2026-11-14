@@ -64,6 +64,16 @@ class procedure TApp.ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall;
     Drive, Directory, Name, ShortName: UnicodeString;
     Separator, Width: Integer;
 
+    function FindPathDelimiter(const Path: UnicodeString): Integer;
+    var
+      j: Integer;
+    begin
+      for j := 1 to Length(Path) do
+        if (Path[j] = '\') or (Path[j] = '/') then
+          Exit(j);
+      Result := 0;
+    end;
+
     function TextWidth(const Text: UnicodeString): Integer;
     var
       Size: TSize;
@@ -76,7 +86,7 @@ class procedure TApp.ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall;
 
   begin
     Result := FileName;
-    if Pos(PathDelim, FileName) = 0 then
+    if FindPathDelimiter(FileName) = 0 then
       Exit;
 
     DC := GetDC(0);
@@ -88,9 +98,9 @@ class procedure TApp.ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall;
       if (Width < 0) or (Width <= MaxWidth) then
         Exit;
 
-      Drive := ExtractFileDrive(FileName);
-      Directory := ExtractFilePath(FileName);
-      Name := ExtractFileName(FileName);
+      Drive := SysUtils.ExtractFileDrive(FileName);
+      Directory := SysUtils.ExtractFilePath(FileName);
+      Name := SysUtils.ExtractFileName(FileName);
       Delete(Directory, 1, Length(Drive));
       while (Directory <> '') and (Directory[1] in ['\', '/']) do
       begin
@@ -100,7 +110,7 @@ class procedure TApp.ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall;
 
       while Directory <> '' do
       begin
-        Separator := Pos(PathDelim, Directory);
+        Separator := FindPathDelimiter(Directory);
         if Separator = 0 then
           Break;
         Delete(Directory, 1, Separator);
@@ -120,29 +130,39 @@ class procedure TApp.ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall;
     end;
   end;
 
+  function ReplaceFormatToken(const FormatText, Token, Value: UnicodeString): UnicodeString;
+  var
+    TokenPosition: SizeInt;
+  begin
+    TokenPosition := Pos(Token, FormatText);
+    if TokenPosition = 0 then
+      Exit(FormatText);
+
+    Result := Copy(FormatText, 1, TokenPosition - 1) + Value + Copy(FormatText, TokenPosition + Length(Token), MaxInt);
+  end;
+
 const
   ID_RELEASE = 100;
   ID_TERMINATE = 101;
-  ProcessString = '"%s" (%d)';
 var
   i: Integer;
   OpenedManually, Exists: Boolean;
   ProcessedFileHandle: TFileHandle;
-  Text: UnicodeString;
+  Text, ProcessName, ProcessText: UnicodeString;
   ExpandedText: UnicodeString = '';
   Title, ReleaseButtonText, TerminateButtonText: UnicodeString;
   Config: TTaskDialogConfig;
   Buttons: array[0..1] of TTaskDialogButton;
   Button: Integer = 0;
   OpenHandle: TFileHandle;
-  Processes, Filenames: TList<string>;
+  Processes, Filenames: TList<UnicodeString>;
   Processed: TList<TFileHandle>;
 begin
   OpenedManually := not Assigned(Args.FileOperation);
 
   try
-    Processes := TList<string>.Create;
-    Filenames := TList<string>.Create;
+    Processes := TList<UnicodeString>.Create;
+    Filenames := TList<UnicodeString>.Create;
     Processed := TList<TFileHandle>.Create;
     try
       for OpenHandle in Args.FileHandleUtil.OpenHandles do
@@ -158,31 +178,33 @@ begin
         if Exists then
           Continue;
 
-        Processed.Add(TFileHandle.Create(OpenHandle.PID, ExtractFileName(OpenHandle.ImageName), OpenHandle.NtFilename, OpenHandle.Filename, 0));
+        Processed.Add(TFileHandle.Create(OpenHandle.PID, SysUtils.ExtractFileName(OpenHandle.ImageName), OpenHandle.NtFilename, OpenHandle.Filename, 0));
 
-        if not Processes.Contains(ProcessString.Format([ExtractFileName(OpenHandle.ImageName), OpenHandle.PID])) then
-          Processes.Add(ProcessString.Format([ExtractFileName(OpenHandle.ImageName), OpenHandle.PID]));
+        ProcessName := SysUtils.ExtractFileName(OpenHandle.ImageName);
+        ProcessText := UnicodeString('"') + ProcessName + UnicodeString('" (') + UnicodeString(IntToStr(OpenHandle.PID)) + ')';
+        if not Processes.Contains(ProcessText) then
+          Processes.Add(ProcessText);
         if not Filenames.Contains(OpenHandle.Filename) then
           Filenames.Add(OpenHandle.Filename);
       end;
 
       if (Processes.Count = 1) and (Filenames.Count = 1) then
-        Text := SFileProcess.Format([Filenames[0], Processes[0]])
+        Text := ReplaceFormatToken(ReplaceFormatToken(UnicodeString(SFileProcess), '%s', Filenames[0]), '%s', Processes[0])
       else if Processes.Count = 1 then
       begin
-        Text := SFilesProcess.Format([Filenames.Count, Processes[0]]);
+        Text := ReplaceFormatToken(ReplaceFormatToken(UnicodeString(SFilesProcess), '%d', UnicodeString(IntToStr(Filenames.Count))), '%s', Processes[0]);
         for i := 0 to Filenames.Count - 1 do
-          ExpandedText += '- %s'#13#10''.Format([Filenames[i]]);
+          ExpandedText += UnicodeString('- ') + Filenames[i] + #13#10;
       end else if Filenames.Count = 1 then
       begin
-        Text := SFileProcesses.Format([Filenames[0], Processes.Count]);
+        Text := ReplaceFormatToken(ReplaceFormatToken(UnicodeString(SFileProcesses), '%s', Filenames[0]), '%d', UnicodeString(IntToStr(Processes.Count)));
         for i := 0 to Processes.Count - 1 do
-          ExpandedText += '- %s'#13#10''.Format([Processes[i]]);
+          ExpandedText += UnicodeString('- ') + Processes[i] + #13#10;
       end else
       begin
-        Text := SFilesProcesses.Format([Filenames.Count, Processes.Count]);
+        Text := ReplaceFormatToken(ReplaceFormatToken(UnicodeString(SFilesProcesses), '%d', UnicodeString(IntToStr(Filenames.Count))), '%d', UnicodeString(IntToStr(Processes.Count)));
         for ProcessedFileHandle in Processed do
-          ExpandedText += ('- "%s" ➔ ' + ProcessString + #13#10).Format([MinimizeName(ProcessedFileHandle.Filename, 200), ProcessedFileHandle.ImageName, ProcessedFileHandle.PID]);
+          ExpandedText += UnicodeString('- "') + MinimizeName(ProcessedFileHandle.Filename, 200) + UnicodeString('" ') + #$2192 + ' "' + ProcessedFileHandle.ImageName + '" (' + UnicodeString(IntToStr(ProcessedFileHandle.PID)) + ')' + #13#10;
       end;
     finally
       for ProcessedFileHandle in Processed do
@@ -193,9 +215,9 @@ begin
       Processed.Free;
     end;
 
-    Title := IfThen<string>(OpenedManually, SMsgDlgInformation, SMsgDlgWarning);
-    ReleaseButtonText := SRelease;
-    TerminateButtonText := STerminate;
+    Title := IfThen<UnicodeString>(OpenedManually, UnicodeString(SMsgDlgInformation), UnicodeString(SMsgDlgWarning));
+    ReleaseButtonText := UnicodeString(SRelease);
+    TerminateButtonText := UnicodeString(STerminate);
 
     Buttons[0].nButtonID := ID_RELEASE;
     Buttons[0].pszButtonText := PWideChar(ReleaseButtonText);
@@ -228,9 +250,9 @@ begin
     except
       on E: Exception do
         if Button = ID_RELEASE then
-          TFunctions.MessageBox(Args.ParentWindowHandle, SErrorMessageRelease + LineEnding + E.Message, SMsgDlgError, MB_ICONERROR)
+          TFunctions.MessageBox(Args.ParentWindowHandle, UnicodeString(SErrorMessageRelease) + UnicodeString(LineEnding) + UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR)
         else
-          TFunctions.MessageBox(Args.ParentWindowHandle, SErrorMessageTerminate + LineEnding + E.Message, SMsgDlgError, MB_ICONERROR);
+          TFunctions.MessageBox(Args.ParentWindowHandle, UnicodeString(SErrorMessageTerminate) + UnicodeString(LineEnding) + UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR);
     end;
   finally
     if not Assigned(Args.FileOperation) then

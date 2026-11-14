@@ -20,7 +20,7 @@ type
   class var
     FMenuBitmap: HBITMAP;
   private
-    FFileName: string;
+    FFileName: UnicodeString;
     FIsDirectory: Boolean;
 
     class procedure CreateMenuBitmap; static;
@@ -52,10 +52,13 @@ resourcestring
 implementation
 
 uses
+  LazFileUtils,
+  LazUTF8,
   App,
   ComServ,
   Registry,
-  SysUtils;
+  SysUtils,
+  UnicodePaths;
 
   { TWhatTheLockMenu }
 
@@ -160,7 +163,7 @@ begin
       Exit;
 
     DragQueryFileW(Medium.hGlobal, 0, FilePathPtr, MemSize(FilePathPtr) div 2);
-    FFileName := FilePathPtr;
+    FFileName := UnicodeString(FilePathPtr);
     Result := NOERROR;
   finally
     Freemem(FilePathPtr);
@@ -174,11 +177,11 @@ var
   MenuInfo: TMENUINFO;
   Text: UnicodeString;
 begin
-  if IncludeTrailingPathDelimiter(ExtractFileDrive(FFileName)) = IncludeTrailingPathDelimiter(FFileName) then
+  if UnicodeCompareTextOrdinal(SysUtils.IncludeTrailingPathDelimiter(SysUtils.ExtractFileDrive(FFileName)), SysUtils.IncludeTrailingPathDelimiter(FFileName)) then
     Exit(MakeResult(SEVERITY_SUCCESS, 0, 0));
 
-  FIsDirectory := DirectoryExists(FFileName);
-  Text := SCheckFileFolder;
+  FIsDirectory := DirectoryExistsUTF8(UTF16ToUTF8(FFileName));
+  Text := UnicodeString(SCheckFileFolder);
 
   MenuItemInfo.cbSize := SizeOf(MenuItemInfo);
   MenuItemInfo.fMask := MIIM_STRING or MIIM_ID or MIIM_BITMAP;
@@ -227,7 +230,7 @@ begin
   else
   begin
     FileHandleUtil.Free;
-    TFunctions.MessageBox(lpici.hwnd, IfThen<string>(FIsDirectory, SFolderNoHandles, SFileNoHandles), SMsgDlgInformation, MB_ICONINFORMATION);
+    TFunctions.MessageBox(lpici.hwnd, IfThen<UnicodeString>(FIsDirectory, UnicodeString(SFolderNoHandles), UnicodeString(SFileNoHandles)), UnicodeString(SMsgDlgInformation), MB_ICONINFORMATION);
   end;
 end;
 
@@ -245,7 +248,7 @@ begin
       StrLCopy(pszName, PChar(SHelpText), cchMax);
     GCS_HELPTEXTW:
     begin
-      StrUc := SHelpText;
+      StrUc := UnicodeString(SHelpText);
       StrLCopy(PWideChar(pszName), PWideChar(StrUc), cchMax);
     end;
     else

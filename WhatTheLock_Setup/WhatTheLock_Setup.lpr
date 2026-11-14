@@ -5,11 +5,13 @@ uses
   Classes,
   Constants,
   Functions,
+  LazFileUtils,
+  LazUTF8,
   Paths,
-  Registry,
   shlobj,
   SysUtils,
   TaskDialog,
+  UnicodePaths,
   Windows;
 
   {$R *.res}
@@ -43,11 +45,11 @@ begin
   Result := False;
   Scope := DefaultScope;
 
-  Title := UnicodeString('%s Setup'.Format([APPNAME]));
-  Instruction := UnicodeString('This will install/update %s.'.Format([APPNAME]));
+  Title := UnicodeString(APPNAME) + ' Setup';
+  Instruction := 'This will install/update ' + UnicodeString(APPNAME) + '.';
   Content := 'Who should be able to use it?';
-  AllUsersText := UnicodeString('For all users'#10'Installs to "%s". Requires administrator rights.'.Format([TPaths.GetInstallDir(scAllUsers)]));
-  CurrentUserText := UnicodeString('Only for me'#10'Installs to "%s". No administrator rights required.'.Format([TPaths.GetInstallDir(scCurrentUser)]));
+  AllUsersText := 'For all users'#10'Installs to "' + TPaths.GetInstallDir(scAllUsers) + '". Requires administrator rights.';
+  CurrentUserText := 'Only for me'#10'Installs to "' + TPaths.GetInstallDir(scCurrentUser) + '". No administrator rights required.';
 
   Buttons[0].nButtonID := ID_ALLUSERS;
   Buttons[0].pszButtonText := PWideChar(AllUsersText);
@@ -82,7 +84,7 @@ begin
   Result := True;
 end;
 
-function ExtractResource(const ResourceName, FilePath: string): Boolean;
+function ExtractResource(const ResourceName: AnsiString; const FilePath: UnicodeString): Boolean;
 var
   ResStream: TResourceStream;
 begin
@@ -90,7 +92,7 @@ begin
   try
     ResStream := TResourceStream.Create(HInstance, ResourceName, RT_RCDATA);
     try
-      ResStream.SaveToFile(FilePath);
+      UnicodeSaveStreamToFile(ResStream, FilePath);
       Result := True;
     finally
       ResStream.Free;
@@ -99,54 +101,79 @@ begin
   end;
 end;
 
-procedure CreateUninstallEntry(const Executable: string);
+procedure CreateUninstallEntry(const Executable: UnicodeString);
 var
-  Reg: TRegistry;
+  Disposition: DWORD;
+  RegistryKey: HKEY;
+  KeyName, Value: UnicodeString;
+  RegistryResult: LongInt;
+
+  procedure WriteStringValue(const Name, Data: UnicodeString);
+  begin
+    RegistryResult := RegSetValueExW(RegistryKey, PWideChar(Name), 0, REG_SZ, PByte(PWideChar(Data)), (Length(Data) + 1) * SizeOf(WideChar));
+    if RegistryResult <> ERROR_SUCCESS then
+    begin
+      SetLastError(RegistryResult);
+      RaiseLastOSError;
+    end;
+  end;
+
+  procedure WriteIntegerValue(const Name: UnicodeString; const Data: DWORD);
+  begin
+    RegistryResult := RegSetValueExW(RegistryKey, PWideChar(Name), 0, REG_DWORD, PByte(@Data), SizeOf(Data));
+    if RegistryResult <> ERROR_SUCCESS then
+    begin
+      SetLastError(RegistryResult);
+      RaiseLastOSError;
+    end;
+  end;
 begin
-  Reg := TRegistry.Create;
-
+  KeyName := UnicodeString(UNINSTALL_KEY);
+  RegistryResult := RegCreateKeyExW(TPaths.GetRegistryRootKey(TPaths.Scope), PWideChar(KeyName), 0, nil, REG_OPTION_NON_VOLATILE, KEY_WRITE, nil, RegistryKey, @Disposition);
+  if RegistryResult <> ERROR_SUCCESS then
+  begin
+    SetLastError(RegistryResult);
+    RaiseLastOSError;
+  end;
   try
-    Reg.RootKey := TPaths.GetRegistryRootKey(TPaths.Scope);
-    if not Reg.OpenKey(UNINSTALL_KEY, True) then
-      Exit;
-
-    Reg.WriteString('DisplayIcon', Executable);
-    Reg.WriteString('DisplayName', APPNAME);
-    Reg.WriteString('DisplayVersion', TFunctions.GetFileVersion(TPaths.ExePath));
-    Reg.WriteString('InstallDate', FormatDateTime('yyyyMMdd', Now));
-    Reg.WriteString('InstallLocation', ExtractFileDir(Executable));
-    Reg.WriteInteger('NoModify', 1);
-    Reg.WriteInteger('NoRepair', 1);
-    Reg.WriteString('UninstallString', 'rundll32.exe "%s" Uninstall'.Format([Executable]));
-    Reg.WriteString('Publisher', 'bmmlms');
+    WriteStringValue('DisplayIcon', Executable);
+    WriteStringValue('DisplayName', UnicodeString(APPNAME));
+    WriteStringValue('DisplayVersion', TFunctions.GetFileVersion(TPaths.ExePath));
+    WriteStringValue('InstallDate', UnicodeString(FormatDateTime('yyyyMMdd', Now)));
+    WriteStringValue('InstallLocation', SysUtils.ExtractFileDir(Executable));
+    WriteIntegerValue('NoModify', 1);
+    WriteIntegerValue('NoRepair', 1);
+    Value := 'rundll32.exe "' + Executable + '" Uninstall';
+    WriteStringValue('UninstallString', Value);
+    WriteStringValue('Publisher', 'bmmlms');
   finally
-    Reg.Free;
+    RegCloseKey(RegistryKey);
   end;
 end;
 
 procedure Install;
 var
-  UninstallLibraryPath: string;
+  UninstallLibraryPath: UnicodeString;
   Lib: HMODULE;
   DllRegisterServer: function: HRESULT; stdcall;
   ClassesKey: HKEY;
   Res: HRESULT;
 begin
-  if not DirectoryExists(TPaths.WhatTheLockDir) then
-    if not ForceDirectories(TPaths.WhatTheLockDir) then
+  if not DirectoryExistsUTF8(UTF16ToUTF8(TPaths.WhatTheLockDir)) then
+    if not UnicodeCreateDirectories(TPaths.WhatTheLockDir) then
       raise Exception.Create('Error creating installation directory');
 
-  if FileExists(TPaths.WhatTheLockLibraryPath) and (not SysUtils.DeleteFile(TPaths.WhatTheLockLibraryPath)) then
+  if FileExistsUTF8(UTF16ToUTF8(TPaths.WhatTheLockLibraryPath)) and (not DeleteFileUTF8(UTF16ToUTF8(TPaths.WhatTheLockLibraryPath))) then
   begin
-    UninstallLibraryPath := ConcatPaths([ExtractFileDir(TPaths.WhatTheLockLibraryPath), Guid.NewGuid.ToString(True)]);
-    SysUtils.RenameFile(TPaths.WhatTheLockLibraryPath, UninstallLibraryPath);
+    UninstallLibraryPath := UnicodeConcatPath(SysUtils.ExtractFileDir(TPaths.WhatTheLockLibraryPath), UnicodeString(Guid.NewGuid.ToString(True)));
+    RenameFileUTF8(UTF16ToUTF8(TPaths.WhatTheLockLibraryPath), UTF16ToUTF8(UninstallLibraryPath));
     TFunctions.ScheduleDelete(UninstallLibraryPath, '');
   end;
 
   if not ExtractResource('LIB_64', TPaths.WhatTheLockLibraryPath) then
     raise Exception.Create('Error installing library');
 
-  Lib := LoadLibrary(PChar(TPaths.WhatTheLockLibraryPath));
+  Lib := LoadLibraryW(PWideChar(TPaths.WhatTheLockLibraryPath));
   if Lib = 0 then
     raise Exception.Create('Error loading library');
 
@@ -171,7 +198,7 @@ begin
 
   CreateUninstallEntry(TPaths.WhatTheLockLibraryPath);
 
-  TFunctions.MessageBox(0, 'Installation completed successfully.', 'Information', MB_ICONINFORMATION);
+  TFunctions.MessageBox(0, UnicodeString('Installation completed successfully.'), UnicodeString('Information'), MB_ICONINFORMATION);
 end;
 
 var
@@ -214,7 +241,7 @@ begin
 
       if (Scope = scAllUsers) and (not IsUserAnAdmin) then
       begin
-        if not TFunctions.RunElevated(TPaths.ExePath, PARAM_ALLUSERS, ProcessExitCode) then
+        if not TFunctions.RunElevated(TPaths.ExePath, UnicodeString(PARAM_ALLUSERS), ProcessExitCode) then
           Exit;
 
         ExitProcess(ProcessExitCode);
@@ -240,7 +267,7 @@ begin
       if not E.Message.EndsWith('.') then
         E.Message := E.Message + '.';
 
-      TFunctions.MessageBox(0, 'Error installing %s: %s'.Format([APPNAME, E.Message]), 'Error', MB_ICONERROR);
+      TFunctions.MessageBox(0, 'Error installing ' + UnicodeString(APPNAME) + ': ' + UnicodeString(E.Message), UnicodeString('Error'), MB_ICONERROR);
 
       ExitProcess(1);
     end;

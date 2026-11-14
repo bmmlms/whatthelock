@@ -14,6 +14,7 @@ uses
   ShlObj,
   SysUtils,
   Translations,
+  UnicodePaths,
   windows;
 
   {$R *.tlb}
@@ -29,7 +30,7 @@ begin
     if (TPaths.Scope = scAllUsers) and (not IsUserAnAdmin) then
     begin
       // Installations for all users can only be removed with administrator rights
-      TFunctions.RunElevated(ConcatPaths([TFunctions.GetSpecialFolder(CSIDL_SYSTEM), 'rundll32.exe']), '"%s" Uninstall'.Format([TPaths.WhatTheLockLibraryPath]), ProcessExitCode);
+      TFunctions.RunElevated(UnicodeConcatPath(TFunctions.GetSpecialFolder(CSIDL_SYSTEM), 'rundll32.exe'), UnicodeString('"') + TPaths.WhatTheLockLibraryPath + '" Uninstall', ProcessExitCode);
       Exit;
     end;
 
@@ -46,14 +47,14 @@ begin
 
     TFunctions.RunUninstall;
 
-    TFunctions.MessageBox(0, '%s was uninstalled successfully.'.Format([APPNAME]), SMsgDlgInformation, MB_ICONINFORMATION);
+    TFunctions.MessageBox(0, UnicodeString(APPNAME) + ' was uninstalled successfully.', UnicodeString(SMsgDlgInformation), MB_ICONINFORMATION);
   except
     on E: Exception do
     begin
       if not E.Message.EndsWith('.') then
         E.Message := E.Message + '.';
 
-      TFunctions.MessageBox(0, 'Error uninstalling %s: %s'.Format([APPNAME, E.Message]), SMsgDlgError, MB_ICONERROR);
+      TFunctions.MessageBox(0, 'Error uninstalling ' + UnicodeString(APPNAME) + ': ' + UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR);
     end;
   end;
 end;
@@ -102,7 +103,7 @@ begin
     Translate;
 
     TPaths.Initialize;
-    TPaths.SetScopeFromLibraryPath(ComServer.ServerFileName);
+    TPaths.SetScopeFromLibraryPath(TPaths.ExePath);
     TFileHandleUtil.Initialize;
     TApp.Initialize;
   except
@@ -111,7 +112,7 @@ begin
       if not E.Message.EndsWith('.') then
         E.Message := E.Message + '.';
 
-      TFunctions.MessageBox(0, E.Message, '%s error'.Format([APPNAME]), MB_ICONERROR);
+      TFunctions.MessageBox(0, UnicodeString(E.Message), UnicodeString(APPNAME) + ' error', MB_ICONERROR);
     end;
   end;
 end.

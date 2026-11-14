@@ -84,6 +84,11 @@
     <RunParams>
       <FormatVersion Value="2"/>
     </RunParams>
+    <RequiredPackages>
+      <Item>
+        <PackageName Value="LazUtils"/>
+      </Item>
+    </RequiredPackages>
     <Units Count="5">
       <Unit0>
         <Filename Value="WhatTheLock_Setup.lpr"/>

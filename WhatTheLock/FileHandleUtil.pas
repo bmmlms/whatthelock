@@ -9,6 +9,7 @@ uses
   JwaPsApi,
   JwaWinType,
   SysUtils,
+  UnicodePaths,
   Windows;
 
 type
@@ -18,17 +19,17 @@ type
   TFileHandle = class
   private
     FPID: Cardinal;
-    FImageName: string;
-    FNtFilename: string;
-    FFilename: string;
+    FImageName: UnicodeString;
+    FNtFilename: UnicodeString;
+    FFilename: UnicodeString;
     FHandle: THandle;
   public
-    constructor Create(const PID: Cardinal; const ImageName, NtFilename, Filename: string; const Handle: THandle);
+    constructor Create(const PID: Cardinal; const ImageName, NtFilename, Filename: UnicodeString; const Handle: THandle);
 
     property PID: Cardinal read FPID;
-    property ImageName: string read FImageName;
-    property NtFilename: string read FNtFilename;
-    property Filename: string read FFilename;
+    property ImageName: UnicodeString read FImageName;
+    property NtFilename: UnicodeString read FNtFilename;
+    property Filename: UnicodeString read FFilename;
     property Handle: THandle read FHandle;
   end;
 
@@ -56,7 +57,7 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    procedure CheckHandles(FilesOrDirectories: array of string; const ExcludeDeletable: Boolean);
+    procedure CheckHandles(FilesOrDirectories: array of UnicodeString; const ExcludeDeletable: Boolean);
     procedure CloseHandles(const OpenHandles: array of TFileHandle; const Kill: Boolean);
 
     property OpenHandles: TList<TFileHandle> read FOpenHandles;
@@ -76,7 +77,7 @@ type
 
 { TFileHandle }
 
-constructor TFileHandle.Create(const PID: Cardinal; const ImageName, NtFilename, Filename: string; const Handle: THandle);
+constructor TFileHandle.Create(const PID: Cardinal; const ImageName, NtFilename, Filename: UnicodeString; const Handle: THandle);
 begin
   FPID := PID;
   FImageName := ImageName;
@@ -101,7 +102,7 @@ var
   Needed: DWORD;
   hMods: array[0..1024] of HMODULE;
   FilePathPtr: PWideChar;
-  FilePath: string;
+  FilePath: UnicodeString;
 begin
   FilePathPtr := GetMem($1000);
 
@@ -109,11 +110,12 @@ begin
     if FEnumProcessModulesEx(Process, @hMods[0], SizeOf(hMods), Needed, LIST_MODULES_32BIT) then
       for i := 0 to Trunc(Needed / SizeOf(HMODULE)) - 1 do
       begin
-        if GetModuleFileNameExW(Process, hMods[i], FilePathPtr, MemSize(FilePathPtr)) = 0 then
+        if GetModuleFileNameExW(Process, hMods[i], FilePathPtr, MemSize(FilePathPtr) div SizeOf(WideChar)) = 0 then
           Continue;
 
-        FilePath := FilePathPtr;
-        if FilePath.EndsWith(kernel32, True) then
+        FilePath := UnicodeString(FilePathPtr);
+        if (Length(FilePath) >= Length(kernel32)) and
+          UnicodeCompareTextOrdinal(Copy(FilePath, Length(FilePath) - Length(kernel32) + 1, Length(kernel32)), UnicodeString(kernel32)) then
           Exit(hMods[i]);
       end;
   finally
@@ -299,7 +301,7 @@ begin
   inherited Destroy;
 end;
 
-procedure TFileHandleUtil.CheckHandles(FilesOrDirectories: array of string; const ExcludeDeletable: Boolean);
+procedure TFileHandleUtil.CheckHandles(FilesOrDirectories: array of UnicodeString; const ExcludeDeletable: Boolean);
 
   function DosPathNameToNtPathName(DosPathName: UnicodeString; Res: PUnicodeString): Boolean;
   begin
@@ -307,18 +309,18 @@ procedure TFileHandleUtil.CheckHandles(FilesOrDirectories: array of string; cons
     Result := RtlDosPathNameToNtPathName_U(PWideChar(DosPathName), Res^, nil, nil);
   end;
 
-  function GetImageName(ProcessHandle: THandle): string;
+  function GetImageName(ProcessHandle: THandle): UnicodeString;
   var
     Size: DWORD;
     Buf: UnicodeString;
   begin
     Size := 1024;
-    SetLength(Buf, Size * 2);
+    SetLength(Buf, Size);
 
     if not QueryFullProcessImageNameW(ProcessHandle, 0, PWideChar(Buf), @Size) then
       raise Exception.Create('QueryFullProcessImageNameW() failed: %s'.Format([SysErrorMessage(GetLastError)]));
 
-    Result := PWideChar(Buf);
+    Result := UnicodeString(PWideChar(Buf));
   end;
 
   function IsDeletable(Filename: TUnicodeString): Boolean;
@@ -359,7 +361,7 @@ var
   Process, DupHandle: THandle;
   ObjectInfo: POBJECT_TYPE_INFORMATION;
   FilePathPtr: PWideChar;
-  FilePath, NtFilePath, CheckFilePath: string;
+  FilePath, NtFilePath, CheckFilePath, CheckFilePathWithDelimiter: UnicodeString;
   FilePathUnicode: UnicodeString;
   NtFilePathUnicode: TUnicodeString;
   Res: Cardinal;
@@ -423,11 +425,11 @@ begin
           if not NT_SUCCESS(NtQueryObject(DupHandle, ObjectTypeInformation, ObjectInfo, MemSize(ObjectInfo), nil)) then
             Continue;
 
-          if ObjectInfo^.Name.Buffer <> 'File' then
+          if UnicodeString(ObjectInfo^.Name.Buffer) <> 'File' then
             Continue;
 
-          Res := FGetFinalPathNameByHandleW(DupHandle, FilePathPtr, MemSize(FilePathPtr) - 1, 0);
-          if (Res <= 4) or (Res > MemSize(FilePathPtr) - 1) then
+          Res := FGetFinalPathNameByHandleW(DupHandle, FilePathPtr, MemSize(FilePathPtr) div SizeOf(WideChar) - 1, 0);
+          if (Res <= 4) or (Res > MemSize(FilePathPtr) div SizeOf(WideChar) - 1) then
             Continue;
 
           if not DosPathNameToNtPathName(FilePathPtr, @NtFilePathUnicode) then
@@ -439,8 +441,10 @@ begin
 
             FilePath := FilePathPtr;
 
-            FilePath := FilePath.Replace('\\?\UNC\', '\\');
-            FilePath := FilePath.Replace('\\?\', '');
+            if Copy(FilePath, 1, 8) = '\\?\UNC\' then
+              FilePath := '\\' + Copy(FilePath, 9, MaxInt)
+            else if Copy(FilePath, 1, 4) = '\\?\' then
+              Delete(FilePath, 1, 4);
 
             NtFilePath := NtFilePathUnicode.Buffer;
           finally
@@ -448,8 +452,13 @@ begin
           end;
 
           for CheckFilePath in FilesOrDirectories do
-            if (CheckFilePath.ToLower = NtFilePath.ToLower) or (NtFilePath.StartsWith(IncludeTrailingPathDelimiter(CheckFilePath), True)) then
+          begin
+            CheckFilePathWithDelimiter := SysUtils.IncludeTrailingPathDelimiter(CheckFilePath);
+            if UnicodeCompareTextOrdinal(CheckFilePath, NtFilePath) or
+              ((Length(NtFilePath) >= Length(CheckFilePathWithDelimiter)) and
+              UnicodeCompareTextOrdinal(Copy(NtFilePath, 1, Length(CheckFilePathWithDelimiter)), CheckFilePathWithDelimiter)) then
               FOpenHandles.Add(TFileHandle.Create(HandleInfoEntry^.ProcessId, GetImageName(Process), NtFilePath, FilePath, HandleInfoEntry^.Handle));
+          end;
         finally
           CloseHandle(DupHandle);
         end;

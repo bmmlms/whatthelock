@@ -10,6 +10,7 @@ uses
   FileHandleUtil,
   FileOperationProgressSink,
   Functions,
+  Generics.Collections,
   RtlConsts,
   shlobj,
   SysUtils,
@@ -61,7 +62,7 @@ type
   private
     FTaskDialogWindowHandle, FParentWindowHandle: THandle;
     FWrappedFileOperation: IFileOperation;
-    FDeleteFiles: TStringList;
+    FDeleteFiles: TList<UnicodeString>;
     FFileHandleUtil: TFileHandleUtil;
     FProgressSink: TFileOperationProgressSink;
     FThreadHandle: THandle;
@@ -126,7 +127,7 @@ var
   DropFiles: PDROPFILES;
   i, FileCount: Integer;
   FilePathPtr: PWideChar;
-  FilePath: string;
+  FilePath: UnicodeString;
 begin
   if not ContainFormat(CF_HDROP, TYMED_HGLOBAL) then
     Exit;
@@ -154,7 +155,7 @@ begin
       for i := 0 to FileCount - 1 do
       begin
         DragQueryFileW(HDROP(DropFiles), i, FilePathPtr, MemSize(FilePathPtr) div 2);
-        FilePath := FilePathPtr;
+        FilePath := UnicodeString(FilePathPtr);
 
         Args.Instance.FDeleteFiles.Add(FilePath);
       end;
@@ -175,10 +176,10 @@ end;
 procedure TFileOperation.CheckHandlesThreadProc;
 begin
   try
-    FileHandleUtil.CheckHandles(FDeleteFiles.ToStringArray, True);
+    FileHandleUtil.CheckHandles(FDeleteFiles.ToArray, True);
   except
     on E: Exception do
-      TFunctions.MessageBox(FParentWindowHandle, E.Message, SMsgDlgError, MB_ICONERROR);
+      TFunctions.MessageBox(FParentWindowHandle, UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR);
   end;
 
   if (FileHandleUtil.OpenHandles.Count > 0) then
@@ -205,7 +206,7 @@ begin
 
   FWrappedFileOperation := WrappedFileOperation;
 
-  FDeleteFiles := TStringList.Create;
+  FDeleteFiles := TList<UnicodeString>.Create;
   FFileHandleUtil := TFileHandleUtil.Create;
 
   FProgressSink := TFileOperationProgressSink.Create;
@@ -338,7 +339,7 @@ begin
       ProcessDataObject(@Arg);
     except
       on E: Exception do
-        TFunctions.MessageBox(0, E.Message, SMsgDlgError, MB_ICONERROR);
+        TFunctions.MessageBox(0, UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR);
     end;
   end;
 end;
