@@ -31,7 +31,7 @@
       <UseVersionInfo Value="True"/>
       <MinorVersionNr Value="1"/>
       <RevisionNr Value="2"/>
-      <StringTable FileDescription="What The Lock Setup" ProductName="What The Lock" ProductVersion="0.1.2.0"/>
+      <StringTable FileDescription="What The Lock Setup" ProductName="What The Lock" ProductVersion="0.1.3.0"/>
     </VersionInfo>
     <BuildModes Count="2">
       <Item1 Name="Debug" Default="True"/>
@@ -84,10 +84,10 @@
     <RunParams>
       <FormatVersion Value="2"/>
     </RunParams>
-    <RequiredPackages>
-      <Item>
+    <RequiredPackages Count="1">
+      <Item1>
         <PackageName Value="LazUtils"/>
-      </Item>
+      </Item1>
     </RequiredPackages>
     <Units Count="5">
       <Unit0>
