@@ -302,9 +302,6 @@ end;
 procedure TFileHandleUtil.CheckHandles(FilesOrDirectories: array of string; const ExcludeDeletable: Boolean);
 
   function DosPathNameToNtPathName(DosPathName: UnicodeString; Res: PUnicodeString): Boolean;
-  var
-    NtName: WideString;
-    NtNameArg: PUNICODE_STRING;
   begin
     Result := False;
     Result := RtlDosPathNameToNtPathName_U(PWideChar(DosPathName), Res^, nil, nil);
