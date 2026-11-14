@@ -204,7 +204,6 @@ begin
 
     ZeroMemory(@Config, SizeOf(Config));
     Config.cbSize := SizeOf(Config);
-    Config.hwndParent := Args.ParentWindowHandle;
     Config.dwFlags := TDF_USE_COMMAND_LINKS or TDF_ALLOW_DIALOG_CANCELLATION;
     Config.dwCommonButtons := TDCBF_CANCEL_BUTTON;
     Config.pszWindowTitle := PWideChar(Title);
