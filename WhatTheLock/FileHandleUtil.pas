@@ -542,122 +542,177 @@ type
 const
   STATUS_INFO_LENGTH_MISMATCH: NTSTATUS = $c0000004;
 var
-  HandleInfo: PSYSTEM_HANDLE_INFORMATION;
+  HandleInfo: PSYSTEM_HANDLE_INFORMATION_EX;
+  HandleInfoSize, ReturnLength: ULONG;
   QueryRes: NTSTATUS;
-  HandleInfoEntry: PSYSTEM_HANDLE_INFORMATION_ENTRY;
-  i: Integer;
-  Process, DupHandle: THandle;
+  Entry: PSYSTEM_HANDLE_TABLE_ENTRY_INFO_EX;
+  i, HandleCount, FileTypeIndex: Integer;
+  CurrentPID, PID: Cardinal;
+  NulHandle, Process, DupHandle: THandle;
+  HandleConsumed: Boolean;
+  Processes: TDictionary<Cardinal, THandle>;
+  Worker: PQueryWorker;
   ObjectInfo: POBJECT_TYPE_INFORMATION;
-  FilePathPtr: PWideChar;
-  FilePath, NtFilePath, CheckFilePath, CheckFilePathWithDelimiter: UnicodeString;
+  UniversalNameBuf: PUNIVERSALNAMEINFOW;
+  FinalPath, FilePath, NtFilePath, CheckFilePath, CheckFilePathWithDelimiter: UnicodeString;
   FilePathUnicode: UnicodeString;
   NtFilePathUnicode: TUnicodeString;
-  Res: Cardinal;
   OpenHandle: TFileHandle;
-  UniversalNameBuf: PUNIVERSALNAMEINFOW absolute FilePathPtr;
   BufferSize: DWORD;
 begin
   for OpenHandle in FOpenHandles do
     OpenHandle.Free;
   FOpenHandles.Clear;
 
-  HandleInfo := GetMem($10000);
-  ObjectInfo := GetMem($1000);
-  FilePathPtr := GetMem($1000);
-
-  for i := 0 to Length(FilesOrDirectories) - 1 do
-  begin
-    FilePathUnicode := FilesOrDirectories[i];
-
-    BufferSize := MemSize(UniversalNameBuf);
-    if WNetGetUniversalNameW(PWideChar(FilePathUnicode), UNIVERSAL_NAME_INFO_LEVEL, UniversalNameBuf, BufferSize) = NO_ERROR then
-      FilePathUnicode := UniversalNameBuf.lpUniversalName;
-
-    if DosPathNameToNtPathName(FilePathUnicode, @NtFilePathUnicode) then
-    begin
-      FilesOrDirectories[i] := NtFilePathUnicode.Buffer;
-      RtlFreeUnicodeString(@NtFilePathUnicode);
-    end;
-  end;
+  HandleInfo := nil;
+  ObjectInfo := nil;
+  UniversalNameBuf := nil;
+  Processes := nil;
+  Worker := nil;
+  NulHandle := INVALID_HANDLE_VALUE;
+  CurrentPID := GetCurrentProcessId;
 
   try
-    QueryRes := NtQuerySystemInformation(SystemHandleInformation, HandleInfo, MemSize(HandleInfo), nil);
-    while QueryRes = STATUS_INFO_LENGTH_MISMATCH do
+    UniversalNameBuf := GetMem($1000);
+    ObjectInfo := GetMem($1000);
+    Processes := TDictionary<Cardinal, THandle>.Create;
+
+    for i := 0 to Length(FilesOrDirectories) - 1 do
     begin
-      HandleInfo := ReAllocMem(HandleInfo, MemSize(HandleInfo) * 2);
-      QueryRes := NtQuerySystemInformation(SystemHandleInformation, HandleInfo, MemSize(HandleInfo), nil);
+      FilePathUnicode := FilesOrDirectories[i];
+
+      BufferSize := MemSize(UniversalNameBuf);
+      if WNetGetUniversalNameW(PWideChar(FilePathUnicode), UNIVERSAL_NAME_INFO_LEVEL, UniversalNameBuf, BufferSize) = NO_ERROR then
+        FilePathUnicode := UniversalNameBuf.lpUniversalName;
+
+      if DosPathNameToNtPathName(FilePathUnicode, @NtFilePathUnicode) then
+      begin
+        FilesOrDirectories[i] := NtFilePathUnicode.Buffer;
+        RtlFreeUnicodeString(@NtFilePathUnicode);
+      end;
     end;
+
+    // An own handle to a file object, its entry in the handle table reveals the object type index of files
+    NulHandle := CreateFileW('NUL', GENERIC_READ, FILE_SHARE_READ or FILE_SHARE_WRITE, nil, OPEN_EXISTING, 0, 0);
+
+    HandleInfoSize := $100000;
+    repeat
+      Freemem(HandleInfo);
+      HandleInfo := GetMem(HandleInfoSize);
+
+      ReturnLength := 0;
+      QueryRes := NtQuerySystemInformation(SYSTEM_INFORMATION_CLASS(SystemExtendedHandleInformation), HandleInfo, HandleInfoSize, @ReturnLength);
+
+      if QueryRes = STATUS_INFO_LENGTH_MISMATCH then
+        if ReturnLength > HandleInfoSize then
+          HandleInfoSize := ReturnLength + $10000
+        else
+          HandleInfoSize := HandleInfoSize * 2;
+    until QueryRes <> STATUS_INFO_LENGTH_MISMATCH;
 
     if not NT_SUCCESS(QueryRes) then
       raise Exception.Create('NtQuerySystemInformation() failed: %s'.Format([SysErrorMessage(RtlNtStatusToDosError(QueryRes))]));
 
-    for i := 0 to HandleInfo^.Count - 1 do
-    begin
-      HandleInfoEntry := @HandleInfo^.Handles[i];
+    HandleCount := Integer(HandleInfo^.NumberOfHandles);
 
-      if HandleInfoEntry.ProcessId = GetCurrentProcessId then
+    FileTypeIndex := -1;
+    if NulHandle <> INVALID_HANDLE_VALUE then
+    begin
+      for i := 0 to HandleCount - 1 do
+      begin
+        Entry := @HandleInfo^.Handles[0];
+        Inc(Entry, i);
+
+        if (Entry^.UniqueProcessId = CurrentPID) and (Entry^.HandleValue = ULONG_PTR(NulHandle)) then
+        begin
+          FileTypeIndex := Entry^.ObjectTypeIndex;
+          Break;
+        end;
+      end;
+
+      CloseHandle(NulHandle);
+      NulHandle := INVALID_HANDLE_VALUE;
+    end;
+
+    for i := 0 to HandleCount - 1 do
+    begin
+      Entry := @HandleInfo^.Handles[0];
+      Inc(Entry, i);
+
+      PID := Cardinal(Entry^.UniqueProcessId);
+      if (PID = CurrentPID) or ((ExcludePID <> 0) and (PID = ExcludePID)) then
         Continue;
 
-      Process := OpenProcess(PROCESS_DUP_HANDLE or PROCESS_QUERY_LIMITED_INFORMATION, False, HandleInfoEntry^.ProcessId);
+      // Only file objects are of interest, skip everything else without touching the handle at all
+      if (FileTypeIndex >= 0) and (Entry^.ObjectTypeIndex <> FileTypeIndex) then
+        Continue;
+
+      Process := GetProcessHandle(Processes, PID);
       if Process = 0 then
         Continue;
 
+      if not NT_SUCCESS(NtDuplicateObject(Process, THandle(Entry^.HandleValue), GetCurrentProcess, @DupHandle, 0, 0, 0)) then
+        Continue;
+
+      HandleConsumed := False;
       try
-        if not NT_SUCCESS(NtDuplicateObject(Process, HandleInfoEntry^.Handle, GetCurrentProcess, @DupHandle, 0, 0, 0)) then
+        // Fallback in case the object type index of files could not be determined
+        if (FileTypeIndex < 0) and (not IsFileObject(DupHandle, ObjectInfo)) then
           Continue;
 
-        try
-          if GetFileType(DupHandle) <> FILE_TYPE_DISK then
-            Continue;
-
-          if not NT_SUCCESS(NtQueryObject(DupHandle, ObjectTypeInformation, ObjectInfo, MemSize(ObjectInfo), nil)) then
-            Continue;
-
-          if UnicodeString(ObjectInfo^.Name.Buffer) <> 'File' then
-            Continue;
-
-          Res := FGetFinalPathNameByHandleW(DupHandle, FilePathPtr, MemSize(FilePathPtr) div SizeOf(WideChar) - 1, 0);
-          if (Res <= 4) or (Res > MemSize(FilePathPtr) div SizeOf(WideChar) - 1) then
-            Continue;
-
-          if not DosPathNameToNtPathName(FilePathPtr, @NtFilePathUnicode) then
-            Continue;
-
-          try
-            if ExcludeDeletable and IsDeletable(NtFilePathUnicode) then
-              Continue;
-
-            FilePath := FilePathPtr;
-
-            if Copy(FilePath, 1, 8) = '\\?\UNC\' then
-              FilePath := '\\' + Copy(FilePath, 9, MaxInt)
-            else if Copy(FilePath, 1, 4) = '\\?\' then
-              Delete(FilePath, 1, 4);
-
-            NtFilePath := NtFilePathUnicode.Buffer;
-          finally
-            RtlFreeUnicodeString(@NtFilePathUnicode);
-          end;
-
-          for CheckFilePath in FilesOrDirectories do
-          begin
-            CheckFilePathWithDelimiter := SysUtils.IncludeTrailingPathDelimiter(CheckFilePath);
-            if UnicodeCompareTextOrdinal(CheckFilePath, NtFilePath) or
-              ((Length(NtFilePath) >= Length(CheckFilePathWithDelimiter)) and
-              UnicodeCompareTextOrdinal(Copy(NtFilePath, 1, Length(CheckFilePathWithDelimiter)), CheckFilePathWithDelimiter)) then
-              FOpenHandles.Add(TFileHandle.Create(HandleInfoEntry^.ProcessId, GetImageName(Process), NtFilePath, FilePath, HandleInfoEntry^.Handle));
-          end;
-        finally
-          CloseHandle(DupHandle);
-        end;
+        // GetFileType()/GetFinalPathNameByHandleW() may block forever, run them in a worker thread with timeout
+        if not QueryFinalPath(Worker, DupHandle, FinalPath, HandleConsumed) then
+          Continue;
       finally
-        CloseHandle(Process);
+        if not HandleConsumed then
+          CloseHandle(DupHandle);
+      end;
+
+      if not DosPathNameToNtPathName(FinalPath, @NtFilePathUnicode) then
+        Continue;
+
+      try
+        if ExcludeDeletable and IsDeletable(NtFilePathUnicode) then
+          Continue;
+
+        FilePath := FinalPath;
+
+        if Copy(FilePath, 1, 8) = '\\?\UNC\' then
+          FilePath := '\\' + Copy(FilePath, 9, MaxInt)
+        else if Copy(FilePath, 1, 4) = '\\?\' then
+          Delete(FilePath, 1, 4);
+
+        NtFilePath := NtFilePathUnicode.Buffer;
+      finally
+        RtlFreeUnicodeString(@NtFilePathUnicode);
+      end;
+
+      for CheckFilePath in FilesOrDirectories do
+      begin
+        CheckFilePathWithDelimiter := SysUtils.IncludeTrailingPathDelimiter(CheckFilePath);
+        if UnicodeCompareTextOrdinal(CheckFilePath, NtFilePath) or
+          ((Length(NtFilePath) >= Length(CheckFilePathWithDelimiter)) and
+          UnicodeCompareTextOrdinal(Copy(NtFilePath, 1, Length(CheckFilePathWithDelimiter)), CheckFilePathWithDelimiter)) then
+          FOpenHandles.Add(TFileHandle.Create(PID, GetImageName(Process), NtFilePath, FilePath, THandle(Entry^.HandleValue)));
       end;
     end;
   finally
+    DestroyQueryWorker(Worker);
+
+    if NulHandle <> INVALID_HANDLE_VALUE then
+      CloseHandle(NulHandle);
+
+    if Assigned(Processes) then
+    begin
+      for Process in Processes.Values do
+        if Process <> 0 then
+          CloseHandle(Process);
+      Processes.Free;
+    end;
+
     Freemem(HandleInfo);
     Freemem(ObjectInfo);
-    Freemem(FilePathPtr);
+    Freemem(UniversalNameBuf);
   end;
 end;
 
@@ -670,28 +725,28 @@ begin
   ExMsg := '';
 
   for OpenHandle in OpenHandles do
-    try
-      Process := OpenProcess(PROCESS_ALL_ACCESS, False, OpenHandle.PID);
-      if Process = 0 then
-        raise Exception.Create('OpenProcess() failed: %s'.Format([SysErrorMessage(GetLastError)]));
+  try
+    Process := OpenProcess(PROCESS_ALL_ACCESS, False, OpenHandle.PID);
+    if Process = 0 then
+      raise Exception.Create('OpenProcess() failed: %s'.Format([SysErrorMessage(GetLastError)]));
 
-      try
-        if Kill then
-        begin
-          if not TerminateProcess(Process, 1) then
-            if GetLastError <> 5 then
-              raise Exception.Create('TerminateProcess() failed: %s'.Format([SysErrorMessage(GetLastError)]));
-        end else if IsProcessWOW64(Process) then
-          RemoteCloseHandleWOW64(Process, OpenHandle.Handle)
-        else
-          RemoteCloseHandle(Process, OpenHandle.Handle);
-      finally
-        CloseHandle(Process);
-      end;
-    except
-      on E: Exception do
-        ExMsg += '- %s%s'.Format([E.Message, LineEnding]);
+    try
+      if Kill then
+      begin
+        if not TerminateProcess(Process, 1) then
+          if GetLastError <> 5 then
+            raise Exception.Create('TerminateProcess() failed: %s'.Format([SysErrorMessage(GetLastError)]));
+      end else if IsProcessWOW64(Process) then
+        RemoteCloseHandleWOW64(Process, OpenHandle.Handle)
+      else
+        RemoteCloseHandle(Process, OpenHandle.Handle);
+    finally
+      CloseHandle(Process);
     end;
+  except
+    on E: Exception do
+      ExMsg += '- %s%s'.Format([E.Message, LineEnding]);
+  end;
 
   if ExMsg <> '' then
     raise Exception.Create(ExMsg.Trim);
