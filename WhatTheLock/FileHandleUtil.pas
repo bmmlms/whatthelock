@@ -261,7 +261,7 @@ function TFileHandleUtil.IsProcessWOW64(const Process: THandle): Boolean;
 var
   ProcessMachine, NativeMachine: USHORT;
 begin
-  FIsWow64Process2(Process, @ProcessMachine, @NativeMachine);
+  IsWow64Process2(Process, @ProcessMachine, @NativeMachine);
   Result := ProcessMachine <> IMAGE_FILE_MACHINE_UNKNOWN;
 end;
 
@@ -278,7 +278,7 @@ begin
   FilePathPtr := GetMem($1000);
 
   try
-    if FEnumProcessModulesEx(Process, @hMods[0], SizeOf(hMods), Needed, LIST_MODULES_32BIT) then
+    if EnumProcessModulesEx(Process, @hMods[0], SizeOf(hMods), Needed, LIST_MODULES_32BIT) then
       for i := 0 to Trunc(Needed / SizeOf(HMODULE)) - 1 do
       begin
         if GetModuleFileNameExW(Process, hMods[i], FilePathPtr, MemSize(FilePathPtr) div SizeOf(WideChar)) = 0 then
