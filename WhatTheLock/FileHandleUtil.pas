@@ -52,7 +52,6 @@ type
     procedure RemoteCloseHandleWOW64(const Process, Handle: THandle);
     procedure RunThread(const Process, Handle: THandle; const Func: Pointer);
   public
-    class procedure Initialize; static;
 
     constructor Create;
     destructor Destroy; override;
