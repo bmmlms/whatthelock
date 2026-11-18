@@ -51,7 +51,7 @@ type
     constructor Create;
     destructor Destroy; override;
 
-    procedure CheckHandles(FilesOrDirectories: array of UnicodeString; const ExcludeDeletable: Boolean);
+    procedure CheckHandles(FilesOrDirectories: array of UnicodeString; const ExcludeDeletable: Boolean; const ExcludePID: Cardinal = 0);
     procedure CloseHandles(const OpenHandles: array of TFileHandle; const Kill: Boolean);
 
     property OpenHandles: TList<TFileHandle> read FOpenHandles;
@@ -60,11 +60,111 @@ type
 implementation
 
 type
-  SYSTEM_HANDLE_INFORMATION_ENTRY = JwaNative.SYSTEM_HANDLE_INFORMATION;
-  PSYSTEM_HANDLE_INFORMATION_ENTRY = ^SYSTEM_HANDLE_INFORMATION_ENTRY;
+  // SystemExtendedHandleInformation uses full width handle values not truncated to 16 bits
+  SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX = record
+    Object_: Pointer;
+    UniqueProcessId: ULONG_PTR;
+    HandleValue: ULONG_PTR;
+    GrantedAccess: ULONG;
+    CreatorBackTraceIndex: USHORT;
+    ObjectTypeIndex: USHORT;
+    HandleAttributes: ULONG;
+    Reserved: ULONG;
+  end;
+  PSYSTEM_HANDLE_TABLE_ENTRY_INFO_EX = ^SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX;
+
+  SYSTEM_HANDLE_INFORMATION_EX = record
+    NumberOfHandles: ULONG_PTR;
+    Reserved: ULONG_PTR;
+    Handles: array[0..0] of SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX;
+  end;
+  PSYSTEM_HANDLE_INFORMATION_EX = ^SYSTEM_HANDLE_INFORMATION_EX;
+
+  { TQueryWorker }
+
+  // Worker thread that performs the potentially blocking queries on a duplicated handle. If a query does not finish in
+  // time the worker is abandoned: it takes over ownership of the handle and of itself, cleans up once the query returns
+  // and exits.
+  PQueryWorker = ^TQueryWorker;
+
+  TQueryWorker = record
+    Thread: THandle;
+    Module: HMODULE;
+    RequestEvent: THandle;
+    DoneEvent: THandle;
+    State: LongInt;
+    Terminate: LongBool;
+    Handle: THandle;
+    PathLength: DWORD;
+    Path: array[0..HANDLE_QUERY_MAX_PATH - 1] of WideChar;
+  end;
+
 function IsWow64Process2(hProcess: HANDLE; pProcessMachine: PUSHORT; pNativeMachine: PUSHORT): BOOL; stdcall; external 'kernelbase.dll' name 'IsWow64Process2';
 function GetFinalPathNameByHandleW(hFILE: HANDLE; lpszFilePath: LPWSTR; cchFilePath, dwFlags: DWORD): DWORD; stdcall; external 'kernel32.dll' name 'GetFinalPathNameByHandleW';
 function EnumProcessModulesEx(hProcess: HANDLE; lphModule: PHMODULE; cb: DWORD; var lpcbNeeded: DWORD; dwFilterFlag: DWORD): BOOL; stdcall; external 'psapi.dll' name 'EnumProcessModulesEx';
+
+procedure FreeQueryWorkerResources(const Worker: PQueryWorker);
+begin
+  CloseHandle(Worker^.RequestEvent);
+  CloseHandle(Worker^.DoneEvent);
+  HeapFree(GetProcessHeap, 0, Worker);
+end;
+
+function QueryWorkerProc(Worker: PQueryWorker): DWORD; stdcall;
+var
+  Module: HMODULE;
+begin
+  while True do
+  begin
+    WaitForSingleObject(Worker^.RequestEvent, INFINITE);
+
+    if Worker^.Terminate then
+      Break;
+
+    Worker^.PathLength := 0;
+    if GetFileType(Worker^.Handle) = FILE_TYPE_DISK then
+      Worker^.PathLength := GetFinalPathNameByHandleW(Worker^.Handle, @Worker^.Path[0], HANDLE_QUERY_MAX_PATH - 1, 0);
+
+    if System.InterlockedCompareExchange(Worker^.State, QUERY_STATE_DONE, QUERY_STATE_BUSY) = QUERY_STATE_ABANDONED then
+    begin
+      // The owner gave up waiting, the handle and the worker belong to this thread now
+      CloseHandle(Worker^.Handle);
+      Module := Worker^.Module;
+      FreeQueryWorkerResources(Worker);
+      FreeLibraryAndExitThread(Module, 0);
+    end;
+
+    SetEvent(Worker^.DoneEvent);
+  end;
+
+  // Regular shutdown, the owner frees the worker after this thread has exited
+  FreeLibraryAndExitThread(Worker^.Module, 0);
+  Result := 0;
+end;
+
+function CreateQueryWorker: PQueryWorker;
+var
+  ThreadId: DWORD;
+begin
+  Result := HeapAlloc(GetProcessHeap, HEAP_ZERO_MEMORY, SizeOf(TQueryWorker));
+  if not Assigned(Result) then
+    raise Exception.Create('HeapAlloc() failed');
+
+  Result^.RequestEvent := CreateEventW(nil, False, False, nil);
+  Result^.DoneEvent := CreateEventW(nil, False, False, nil);
+
+  if (Result^.RequestEvent = 0) or (Result^.DoneEvent = 0) then
+  begin
+    FreeQueryWorkerResources(Result);
+    raise Exception.Create('CreateEventW() failed: %s'.Format([SysErrorMessage(GetLastError)]));
+  end;
+
+  // Keep the library loaded as long as the thread runs, it may outlive its owner when it gets abandoned
+  if not GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, @QueryWorkerProc, Result^.Module) then
+  begin
+    FreeQueryWorkerResources(Result);
+    raise Exception.Create('GetModuleHandleExW() failed: %s'.Format([SysErrorMessage(GetLastError)]));
+  end;
 
   SYSTEM_HANDLE_INFORMATION = record
     Count: ULONG;
@@ -298,7 +398,7 @@ begin
   inherited Destroy;
 end;
 
-procedure TFileHandleUtil.CheckHandles(FilesOrDirectories: array of UnicodeString; const ExcludeDeletable: Boolean);
+procedure TFileHandleUtil.CheckHandles(FilesOrDirectories: array of UnicodeString; const ExcludeDeletable: Boolean; const ExcludePID: Cardinal);
 
   function DosPathNameToNtPathName(DosPathName: UnicodeString; Res: PUnicodeString): Boolean;
   begin
