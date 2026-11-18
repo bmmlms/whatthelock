@@ -7,13 +7,12 @@ uses
   Constants,
   FileHandleUtil,
   Functions,
-  gettext,
+  LibraryInit,
   Paths,
   RtlConsts,
   ShellExt,
   ShlObj,
   SysUtils,
-  Translations,
   UnicodePaths,
   windows;
 
@@ -26,10 +25,12 @@ var
   ClassesKey: HKEY;
   ProcessExitCode: DWORD;
 begin
+  // Uninstalling has to work even if parts of the initialization failed
+  EnsureLibraryInitialized(False);
+
   try
     if (TPaths.Scope = scAllUsers) and (not IsUserAnAdmin) then
     begin
-      // Installations for all users can only be removed with administrator rights
       TFunctions.RunElevated(UnicodeConcatPath(TFunctions.GetSpecialFolder(CSIDL_SYSTEM), 'rundll32.exe'), UnicodeString('"') + TPaths.WhatTheLockLibraryPath + '" Uninstall', ProcessExitCode);
       Exit;
     end;
@@ -59,34 +60,19 @@ begin
   end;
 end;
 
-procedure Translate;
-var
-  Lang, FallbackLang: string;
-  Res: TResourceStream;
-  PoStringStream: TStringStream;
-  PoFile: TPOFile;
+// Started by the context menu via "rundll32.exe <library>,Check <ExcludePID> <ParentWindow> "<FileName>"".
+// rundll32 prefers the export with suffix W and passes the command line as UTF-16 then.
+procedure CheckW(Wnd: HWND; Instance: HINST; CmdLine: PWideChar; CmdShow: Integer); stdcall;
 begin
-  GetLanguageIDs(Lang, FallbackLang);
+  if not EnsureLibraryInitialized(False) then
+    Exit;
 
   try
-    Res := TResourceStream.Create(HInstance, 'WhatTheLock.' + LowerCase(Lang), RT_RCDATA);
+    RunCheck(UnicodeString(CmdLine));
   except
-    on E: EResNotFound do
-      Exit
-    else
-      raise Exception.Create('Error loading translations');
+    on E: Exception do
+      TFunctions.HandleException(0, E);
   end;
-
-  PoStringStream := TStringStream.Create;
-  Res.SaveToStream(PoStringStream);
-  Res.Free;
-
-  PoFile := TPOFile.Create(False);
-  PoFile.ReadPOText(PoStringStream.DataString);
-  PoStringStream.Free;
-
-  TranslateResourceStrings(PoFile);
-  PoFile.Free;
 end;
 
 exports
@@ -94,25 +80,11 @@ exports
   DllCanUnloadNow,
   DllRegisterServer,
   DllUnregisterServer,
-  Uninstall;
+  Uninstall,
+  CheckW;
 
 begin
+  // This block runs in DllMain while the loader lock is held, the real initialization happens in
+  // EnsureLibraryInitialized() on first use (TWhatTheLockMenu.Initialize, Uninstall, CheckW).
   IsMultiThread := True;
-
-  try
-    Translate;
-
-    TPaths.Initialize;
-    TPaths.SetScopeFromLibraryPath(TPaths.ExePath);
-    TFileHandleUtil.Initialize;
-    TApp.Initialize;
-  except
-    on E: Exception do
-    begin
-      if not E.Message.EndsWith('.') then
-        E.Message := E.Message + '.';
-
-      TFunctions.MessageBox(0, UnicodeString(E.Message), UnicodeString(APPNAME) + ' error', MB_ICONERROR);
-    end;
-  end;
 end.
