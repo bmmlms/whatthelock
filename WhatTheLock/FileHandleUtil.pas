@@ -59,6 +59,16 @@ type
 
 implementation
 
+const
+  SystemExtendedHandleInformation = 64;
+
+  HANDLE_QUERY_TIMEOUT = 200;
+  HANDLE_QUERY_MAX_PATH = 4096;
+
+  QUERY_STATE_BUSY = 0;
+  QUERY_STATE_DONE = 1;
+  QUERY_STATE_ABANDONED = 2;
+
 type
   // SystemExtendedHandleInformation uses full width handle values not truncated to 16 bits
   SYSTEM_HANDLE_TABLE_ENTRY_INFO_EX = record
