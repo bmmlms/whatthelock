@@ -421,6 +421,7 @@ procedure TFileHandleUtil.RunThread(const Process, Handle: THandle; const Func: 
 var
   RemoteFunc: Pointer;
   Thread: THandle;
+  ThreadExitCode: DWORD;
 begin
   RemoteFunc := VirtualAllocEx(Process, nil, MemSize(Func), MEM_COMMIT or MEM_RESERVE, PAGE_EXECUTE_READWRITE);
   if not Assigned(RemoteFunc) then
@@ -436,10 +437,11 @@ begin
 
     WaitForSingleObject(Thread, INFINITE);
 
-    GetExitCodeThread(Thread, @ExitCode);
+    ThreadExitCode := 0;
+    GetExitCodeThread(Thread, @ThreadExitCode);
     CloseHandle(Thread);
 
-    if ExitCode = 0 then
+    if ThreadExitCode = 0 then
       raise Exception.Create('CloseHandle() failed');
   finally
     VirtualFreeEx(Process, RemoteFunc, 0, MEM_RELEASE);
