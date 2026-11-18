@@ -54,6 +54,20 @@ resourcestring
 
 implementation
 
+function GetOwnerWindow(const Wnd: HWND): HWND;
+var
+  PID: DWORD;
+begin
+  Result := 0;
+  if Wnd = 0 then
+    Exit;
+
+  PID := 0;
+  GetWindowThreadProcessId(Wnd, @PID);
+  if PID = GetCurrentProcessId then
+    Result := Wnd;
+end;
+
 { TApp }
 
 class procedure TApp.ShowTaskDialogProc(Args: PShowClassDialogArgs); stdcall;
@@ -250,9 +264,9 @@ begin
     except
       on E: Exception do
         if Button = ID_RELEASE then
-          TFunctions.MessageBox(Args.ParentWindowHandle, UnicodeString(SErrorMessageRelease) + UnicodeString(LineEnding) + UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR)
+          TFunctions.MessageBox(GetOwnerWindow(Args.ParentWindowHandle), UnicodeString(SErrorMessageRelease) + UnicodeString(LineEnding) + UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR)
         else
-          TFunctions.MessageBox(Args.ParentWindowHandle, UnicodeString(SErrorMessageTerminate) + UnicodeString(LineEnding) + UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR);
+          TFunctions.MessageBox(GetOwnerWindow(Args.ParentWindowHandle), UnicodeString(SErrorMessageTerminate) + UnicodeString(LineEnding) + UnicodeString(E.Message), UnicodeString(SMsgDlgError), MB_ICONERROR);
     end;
   finally
     if not Assigned(Args.FileOperation) then
@@ -306,10 +320,14 @@ begin
         GetWindowRect(hwnd, TaskDialogRect);
         GetWindowRect(Args.ParentWindowHandle, ParentRect);
 
-        SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, Args.ParentWindowHandle);
+        if GetOwnerWindow(Args.ParentWindowHandle) <> 0 then
+          SetWindowLongPtrW(hwnd, GWLP_HWNDPARENT, Args.ParentWindowHandle);
 
         SetWindowPos(hwnd, 0, ParentRect.Left + (ParentRect.Width div 2) - (TaskDialogRect.Width div 2), ParentRect.Top + (ParentRect.Height div 2) - (TaskDialogRect.Height div 2), 0, 0, SWP_NOSIZE or SWP_NOZORDER);
       end;
+
+      if GetOwnerWindow(Args.ParentWindowHandle) = 0 then
+        SetForegroundWindow(hwnd);
     end;
     TDN_DESTROYED:
       if Assigned(Args.FileOperation) then
