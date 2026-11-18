@@ -448,16 +448,6 @@ begin
   end;
 end;
 
-class procedure TFileHandleUtil.Initialize;
-begin
-  FIsWow64Process2 := GetProcAddress(GetModuleHandle('kernelbase.dll'), 'IsWow64Process2');
-  FGetFinalPathNameByHandleW := GetProcAddress(GetModuleHandle(kernel32), 'GetFinalPathNameByHandleW');
-  FEnumProcessModulesEx := GetProcAddress(GetModuleHandle('psapi.dll'), 'EnumProcessModulesEx');
-
-  if (not Assigned(FIsWow64Process2)) or (not Assigned(FGetFinalPathNameByHandleW)) or (not Assigned(FEnumProcessModulesEx)) then
-    raise Exception.Create('A required function could not be found, your windows version is most likely unsupported.');
-end;
-
 constructor TFileHandleUtil.Create;
 begin
   FOpenHandles := TList<TFileHandle>.Create;
