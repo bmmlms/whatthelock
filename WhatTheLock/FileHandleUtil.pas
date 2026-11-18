@@ -519,6 +519,21 @@ procedure TFileHandleUtil.CheckHandles(FilesOrDirectories: array of UnicodeStrin
     Exit(True);
   end;
 
+  function GetProcessHandle(const Processes: TDictionary<Cardinal, THandle>; const PID: Cardinal): THandle;
+  begin
+    if Processes.TryGetValue(PID, Result) then
+      Exit;
+
+    // Failures are cached as well (0), the handle table contains many entries per process
+    Result := OpenProcess(PROCESS_DUP_HANDLE or PROCESS_QUERY_LIMITED_INFORMATION, False, PID);
+    Processes.Add(PID, Result);
+  end;
+
+  function IsFileObject(const Handle: THandle; const ObjectInfo: POBJECT_TYPE_INFORMATION): Boolean;
+  begin
+    Result := NT_SUCCESS(NtQueryObject(Handle, ObjectTypeInformation, ObjectInfo, MemSize(ObjectInfo), nil)) and (UnicodeString(ObjectInfo^.Name.Buffer) = 'File');
+  end;
+
 type
   UNIVERSAL_NAME_INFOW = record
     lpUniversalName: LPWSTR;
