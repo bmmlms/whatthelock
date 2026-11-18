@@ -7,6 +7,7 @@ uses
   Generics.Collections,
   JwaNative,
   JwaPsApi,
+  JwaWinBase,
   JwaWinType,
   SysUtils,
   UnicodePaths,
@@ -52,7 +53,6 @@ type
     procedure RemoteCloseHandleWOW64(const Process, Handle: THandle);
     procedure RunThread(const Process, Handle: THandle; const Func: Pointer);
   public
-
     constructor Create;
     destructor Destroy; override;
 
