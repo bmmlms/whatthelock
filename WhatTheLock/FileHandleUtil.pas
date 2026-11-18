@@ -38,11 +38,6 @@ type
 
   TFileHandleUtil = class
   private
-  class var
-    FIsWow64Process2: function(hProcess: HANDLE; pProcessMachine: PUSHORT; pNativeMachine: PUSHORT): BOOL; stdcall;
-    FGetFinalPathNameByHandleW: function(hFILE: HANDLE; lpszFilePath: LPWSTR; cchFilePath, dwFlags: DWORD): DWORD; stdcall;
-    FEnumProcessModulesEx: function(hProcess: HANDLE; lphModule: PHMODULE; cb: DWORD; var lpcbNeeded: DWORD; dwFilterFlag: DWORD): BOOL; stdcall;
-  private
     FOpenHandles: TList<TFileHandle>;
 
     function IsProcessWOW64(const Process: THandle): Boolean;
@@ -67,6 +62,9 @@ implementation
 type
   SYSTEM_HANDLE_INFORMATION_ENTRY = JwaNative.SYSTEM_HANDLE_INFORMATION;
   PSYSTEM_HANDLE_INFORMATION_ENTRY = ^SYSTEM_HANDLE_INFORMATION_ENTRY;
+function IsWow64Process2(hProcess: HANDLE; pProcessMachine: PUSHORT; pNativeMachine: PUSHORT): BOOL; stdcall; external 'kernelbase.dll' name 'IsWow64Process2';
+function GetFinalPathNameByHandleW(hFILE: HANDLE; lpszFilePath: LPWSTR; cchFilePath, dwFlags: DWORD): DWORD; stdcall; external 'kernel32.dll' name 'GetFinalPathNameByHandleW';
+function EnumProcessModulesEx(hProcess: HANDLE; lphModule: PHMODULE; cb: DWORD; var lpcbNeeded: DWORD; dwFilterFlag: DWORD): BOOL; stdcall; external 'psapi.dll' name 'EnumProcessModulesEx';
 
   SYSTEM_HANDLE_INFORMATION = record
     Count: ULONG;
