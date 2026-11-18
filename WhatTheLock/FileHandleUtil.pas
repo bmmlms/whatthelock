@@ -176,11 +176,75 @@ begin
     raise Exception.Create('GetModuleHandleExW() failed: %s'.Format([SysErrorMessage(GetLastError)]));
   end;
 
-  SYSTEM_HANDLE_INFORMATION = record
-    Count: ULONG;
-    Handles: array[0..0] of SYSTEM_HANDLE_INFORMATION_ENTRY;
+  Result^.Thread := CreateThread(nil, 0, @QueryWorkerProc, Result, 0, ThreadId);
+  if Result^.Thread = 0 then
+  begin
+    FreeLibrary(Result^.Module);
+    FreeQueryWorkerResources(Result);
+    raise Exception.Create('CreateThread() failed: %s'.Format([SysErrorMessage(GetLastError)]));
   end;
-  PSYSTEM_HANDLE_INFORMATION = ^SYSTEM_HANDLE_INFORMATION;
+end;
+
+procedure DestroyQueryWorker(var Worker: PQueryWorker);
+var
+  Thread: THandle;
+begin
+  if not Assigned(Worker) then
+    Exit;
+
+  Thread := Worker^.Thread;
+
+  Worker^.Terminate := True;
+  SetEvent(Worker^.RequestEvent);
+
+  if WaitForSingleObject(Thread, 5000) = WAIT_OBJECT_0 then
+    FreeQueryWorkerResources(Worker);
+
+  CloseHandle(Thread);
+  Worker := nil;
+end;
+
+// Queries the final path of a duplicated handle with a timeout. Returns False if the handle is not a disk file, the
+// query failed or it timed out. On timeout HandleConsumed is set to True, the abandoned worker closes the handle then.
+function QueryFinalPath(var Worker: PQueryWorker; const DupHandle: THandle; out Path: UnicodeString;
+  out HandleConsumed: Boolean): Boolean;
+var
+  PathLength: DWORD;
+begin
+  Result := False;
+  HandleConsumed := False;
+  Path := '';
+
+  if not Assigned(Worker) then
+    Worker := CreateQueryWorker;
+
+  Worker^.Handle := DupHandle;
+  Worker^.PathLength := 0;
+  Worker^.State := QUERY_STATE_BUSY;
+  SetEvent(Worker^.RequestEvent);
+
+  if WaitForSingleObject(Worker^.DoneEvent, HANDLE_QUERY_TIMEOUT) <> WAIT_OBJECT_0 then
+  begin
+    if System.InterlockedCompareExchange(Worker^.State, QUERY_STATE_ABANDONED, QUERY_STATE_BUSY) = QUERY_STATE_BUSY then
+    begin
+      // The query hangs, leave handle and worker to the worker thread and use a new worker for the next query
+      CloseHandle(Worker^.Thread);
+      Worker := nil;
+      HandleConsumed := True;
+      Exit;
+    end;
+
+    // The query finished just after the timeout elapsed, DoneEvent is about to be signaled
+    WaitForSingleObject(Worker^.DoneEvent, INFINITE);
+  end;
+
+  PathLength := Worker^.PathLength;
+  if (PathLength <= 4) or (PathLength > HANDLE_QUERY_MAX_PATH - 1) then
+    Exit;
+
+  SetString(Path, PWideChar(@Worker^.Path[0]), PathLength);
+  Result := True;
+end;
 
 { TFileHandle }
 
