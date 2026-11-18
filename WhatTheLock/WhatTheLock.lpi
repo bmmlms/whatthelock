@@ -112,6 +112,10 @@
         <IsPartOfProject Value="True"/>
       </Unit>
       <Unit>
+        <Filename Value="LibraryInit.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
         <Filename Value="..\Shared\Functions.pas"/>
         <IsPartOfProject Value="True"/>
       </Unit>
