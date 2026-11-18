@@ -21,9 +21,10 @@ type
     FMenuBitmap: HBITMAP;
   private
     FFileName: UnicodeString;
-    FIsDirectory: Boolean;
-
+  public
     class procedure CreateMenuBitmap; static;
+
+    procedure Initialize; override;
   protected
     // IContextMenu
     function QueryContextMenu(hmenu: HMENU; indexMenu, idCmdFirst, idCmdLast, uFlags: UINT): HResult; stdcall;
@@ -43,6 +44,8 @@ type
 const
   CLSID_WhatTheLockMenu: TGUID = '{9684203C-406A-4228-8413-1D10E57D4ABD}';
 
+procedure RunCheck(const CommandLine: UnicodeString);
+
 resourcestring
   SHelpText = 'Try to unlock a currently used file/folder';
   SCheckFileFolder = 'Check with What The Lock...';
@@ -56,11 +59,134 @@ uses
   LazUTF8,
   App,
   ComServ,
+  JwawinUser,
+  LibraryInit,
+  Paths,
   Registry,
   SysUtils,
   UnicodePaths;
 
+function ParseCheckCommandLine(const CommandLine: UnicodeString; out ExcludePID: Cardinal; out ParentWindow: HWND; out FileName: UnicodeString): Boolean;
+
+  function NextToken(var S: UnicodeString): UnicodeString;
+  var
+    P: Integer;
+  begin
+    S := TrimLeft(S);
+    P := Pos(UnicodeString(' '), S);
+    if P = 0 then
+    begin
+      Result := S;
+      S := '';
+    end else
+    begin
+      Result := Copy(S, 1, P - 1);
+      Delete(S, 1, P);
+    end;
+  end;
+
+var
+  Rest: UnicodeString;
+  Value: QWord;
+  Code: Integer;
+begin
+  Result := False;
+  ExcludePID := 0;
+  ParentWindow := 0;
+  FileName := '';
+
+  Rest := CommandLine;
+
+  Val(NextToken(Rest), Value, Code);
+  if Code <> 0 then
+    Exit;
+  ExcludePID := Cardinal(Value);
+
+  Val(NextToken(Rest), Value, Code);
+  if Code <> 0 then
+    Exit;
+  ParentWindow := HWND(Value);
+
+  // The file name is the remainder, it may contain spaces
+  FileName := Trim(Rest);
+  if (Length(FileName) >= 2) and (FileName[1] = '"') and (FileName[Length(FileName)] = '"') then
+    FileName := Copy(FileName, 2, Length(FileName) - 2);
+
+  Result := FileName <> '';
+end;
+
+procedure StartCheckProcess(const ParentWindow: HWND; const FileName: UnicodeString);
+var
+  ApplicationName, CommandLine: UnicodeString;
+  StartupInfo: STARTUPINFOW;
+  ProcessInfo: PROCESS_INFORMATION;
+begin
+  ApplicationName := UnicodeConcatPath(TFunctions.GetSpecialFolder(CSIDL_SYSTEM), 'rundll32.exe');
+  CommandLine := UnicodeString('"') + ApplicationName + UnicodeString('" "') + TPaths.ExePath + UnicodeString('",Check ') +
+    UnicodeString(IntToStr(GetCurrentProcessId)) + UnicodeString(' ') + UnicodeString(IntToStr(PtrUInt(ParentWindow))) + UnicodeString(' "') + FileName + UnicodeString('"');
+  UniqueString(CommandLine);
+
+  ZeroMemory(@StartupInfo, SizeOf(StartupInfo));
+  StartupInfo.cb := SizeOf(StartupInfo);
+  StartupInfo.dwFlags := STARTF_FORCEONFEEDBACK;
+
+  ZeroMemory(@ProcessInfo, SizeOf(ProcessInfo));
+
+  if not CreateProcessW(PWideChar(ApplicationName), PWideChar(CommandLine), nil, nil, False, CREATE_SUSPENDED, nil, nil, @StartupInfo, @ProcessInfo) then
+    raise Exception.Create('CreateProcessW() failed: %s'.Format([SysErrorMessage(GetLastError)]));
+
+  // Explorer is the foreground process, allow the check process to bring its dialog to the front
+  AllowSetForegroundWindow(ProcessInfo.dwProcessId);
+
+  ResumeThread(ProcessInfo.hThread);
+  CloseHandle(ProcessInfo.hThread);
+  CloseHandle(ProcessInfo.hProcess);
+end;
+
+procedure RunCheck(const CommandLine: UnicodeString);
+var
+  ExcludePID: Cardinal;
+  ParentWindow: HWND;
+  FileName: UnicodeString;
+  IsDirectory: Boolean;
+  FileHandleUtil: TFileHandleUtil;
+begin
+  if not ParseCheckCommandLine(CommandLine, ExcludePID, ParentWindow, FileName) then
+    raise Exception.Create('Invalid command line: ' + string(CommandLine));
+
+  if (ParentWindow <> 0) and (not IsWindow(ParentWindow)) then
+    ParentWindow := 0;
+
+  IsDirectory := DirectoryExistsUTF8(UTF16ToUTF8(FileName));
+
+  FileHandleUtil := TFileHandleUtil.Create;
+  try
+    // Explorer's own handles were never reported when the check ran inside explorer, keep it that way
+    FileHandleUtil.CheckHandles([FileName], False, ExcludePID);
+  except
+    FileHandleUtil.Free;
+    raise;
+  end;
+
+  if FileHandleUtil.OpenHandles.Count > 0 then
+    TApp.ShowTaskDialog(ParentWindow, FileHandleUtil, nil)
+  else
+  begin
+    FileHandleUtil.Free;
+    // No owner window: An owner in another process (Explorer) would attach both input queues
+    TFunctions.MessageBox(0, IfThen<UnicodeString>(IsDirectory, UnicodeString(SFolderNoHandles), UnicodeString(SFileNoHandles)), UnicodeString(SMsgDlgInformation),
+      MB_ICONINFORMATION or MB_SETFOREGROUND);
+  end;
+end;
+
   { TWhatTheLockMenu }
+
+procedure TWhatTheLockMenu.Initialize;
+begin
+  inherited Initialize;
+
+  EnsureLibraryInitialized(True);
+end;
 
 class procedure TWhatTheLockMenu.CreateMenuBitmap;
 type
@@ -180,7 +306,6 @@ begin
   if UnicodeCompareTextOrdinal(SysUtils.IncludeTrailingPathDelimiter(SysUtils.ExtractFileDrive(FFileName)), SysUtils.IncludeTrailingPathDelimiter(FFileName)) then
     Exit(MakeResult(SEVERITY_SUCCESS, 0, 0));
 
-  FIsDirectory := DirectoryExistsUTF8(UTF16ToUTF8(FFileName));
   Text := UnicodeString(SCheckFileFolder);
 
   MenuItemInfo.cbSize := SizeOf(MenuItemInfo);
@@ -194,43 +319,36 @@ begin
   MenuInfo.fMask := MIM_STYLE;
   MenuInfo.dwStyle := MNS_CHECKORBMP;
 
-  SetMenuInfo(hmenu, @MenuInfo);
+  SetMenuInfo(hmenu, MenuInfo);
 
-  InsertMenuItemW(hmenu, indexMenu, True, @MenuItemInfo);
+  InsertMenuItemW(hmenu, indexMenu, True, MenuItemInfo);
 
   Exit(MakeResult(SEVERITY_SUCCESS, 0, 1));
 end;
 
 function TWhatTheLockMenu.InvokeCommand(var lpici: shlobj.TCMINVOKECOMMANDINFO): HResult; stdcall;
 var
-  FileHandleUtil: TFileHandleUtil;
+  Verb: PtrUInt;
 begin
-  Result := NOERROR;
+  Verb := PtrUInt(lpici.lpVerb);
 
-  if HiWord(LongInt(lpici.lpVerb)) <> 0 then
+  // IS_INTRESOURCE(): Verbs passed as string are not supported
+  if (Verb shr 16) <> 0 then
     Exit(E_FAIL);
 
-  if LoWord(LongInt(lpici.lpVerb)) > 0 then
+  if Word(Verb) <> 0 then
     Exit(E_INVALIDARG);
 
-  if LoWord(LongInt(lpici.lpVerb)) <> 0 then
-    Exit;
-
-  FileHandleUtil := TFileHandleUtil.Create;
-
   try
-    FileHandleUtil.CheckHandles([FFileName], False);
+    // Run the check in a separate process since querying handles of other processes can block
+    StartCheckProcess(lpici.hwnd, FFileName);
+    Result := NOERROR;
   except
     on E: Exception do
+    begin
       TFunctions.HandleException(lpici.hwnd, E);
-  end;
-
-  if FileHandleUtil.OpenHandles.Count > 0 then
-    TApp.ShowTaskDialog(lpici.hwnd, FileHandleUtil, nil)
-  else
-  begin
-    FileHandleUtil.Free;
-    TFunctions.MessageBox(lpici.hwnd, IfThen<UnicodeString>(FIsDirectory, UnicodeString(SFolderNoHandles), UnicodeString(SFileNoHandles)), UnicodeString(SMsgDlgInformation), MB_ICONINFORMATION);
+      Result := E_FAIL;
+    end;
   end;
 end;
 
@@ -292,7 +410,6 @@ begin
 end;
 
 initialization
-  TWhatTheLockMenu.CreateMenuBitmap;
   TWhatTheLockMenuFactory.Create(ComServer, TWhatTheLockMenu, CLSID_WhatTheLockMenu, 'WhatTheLock', 'What The Lock Shell Extension', ciMultiInstance, tmApartment);
 
 end.
